@@ -70,7 +70,7 @@ def fabriquer(ctx) -> TypeOperation:
                 await service.retirer(s, op.target_id)
             elif item is not None:
                 await s.execute(
-                    text("UPDATE artist_flags SET pending_review = 1 WHERE artist_id = :id"), {"id": op.target_id}
+                    text("UPDATE plugin_safeplace.artist_flags SET pending_review = 1 WHERE artist_id = :id"), {"id": op.target_id}
                 )
             await s.commit()
 
@@ -81,7 +81,7 @@ def fabriquer(ctx) -> TypeOperation:
             if not await _artiste_present(s, op.target_id):
                 return Verdict("sans_objet", "artiste_absent", "artiste disparu ou à la corbeille")
             ligne = (await s.execute(
-                text("SELECT pending_review FROM artist_flags WHERE artist_id = :id"), {"id": op.target_id}
+                text("SELECT pending_review FROM plugin_safeplace.artist_flags WHERE artist_id = :id"), {"id": op.target_id}
             )).first()
         if ligne is not None and not ligne.pending_review:
             return Verdict("effet_present", "deja_signale", "artiste déjà signalé dans la safeplace")

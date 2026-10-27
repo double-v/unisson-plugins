@@ -2,8 +2,8 @@
 son app, son vrai chargeur. Lancement : voir `README.md` (« Tests »).
 
 Le plugin est copié dans un dossier de plugins vide, chargé, activé ; à la
-fin, sa table et sa table de version sont retirées — le cœur ne les connaît
-pas, et `drop_all` buterait sur la clé étrangère vers `artists`.
+fin, son schéma `plugin_safeplace` est retiré — le cœur ne le connaît pas,
+et `drop_all` buterait sur la clé étrangère vers `artists`.
 """
 
 import shutil
@@ -19,8 +19,10 @@ async def _retirer_tables():
     from backend.tests.conftest import test_engine
 
     async with test_engine.begin() as conn:
-        await conn.execute(text("DROP TABLE IF EXISTS artist_flags CASCADE"))
-        await conn.execute(text("DROP TABLE IF EXISTS alembic_version_safeplace"))
+        await conn.execute(text("DROP SCHEMA IF EXISTS plugin_safeplace CASCADE"))
+        # Une suite d'avant la 1.2.0 a pu les laisser dans `public`.
+        await conn.execute(text("DROP TABLE IF EXISTS public.artist_flags CASCADE"))
+        await conn.execute(text("DROP TABLE IF EXISTS public.alembic_version_safeplace"))
 
 
 @pytest_asyncio.fixture

@@ -1,9 +1,9 @@
 id = "safeplace"
 nom = "Safeplace"
-version = "1.1.1"
+version = "1.2.0"
 description = "Signaler des artistes (accusations, condamnations) et proposer de les mettre à la corbeille."
 categorie = "officiel"
-coeur = ">=0.2"
+coeur = ">=0.3"
 actif_par_defaut = false
 
 [front_abi]
@@ -14,5 +14,3 @@ routes = true
 migrations = true
 outils_chat = ["safeplace_check_artist_status"]
 types_operation = ["safeplace.signaler"]
-# Ce que la purge supprime (cœur ≥ lot 5 de la spec 018) : la table adoptée.
-tables = ["artist_flags"]
