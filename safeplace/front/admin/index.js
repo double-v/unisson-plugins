@@ -19,7 +19,7 @@ function dateCourte(iso) {
     return iso;
   }
 }
-const _sfc_main$3 = {
+const _sfc_main$4 = {
   __name: "Badge",
   props: { artiste: { type: Object, required: true } },
   setup(__props) {
@@ -44,15 +44,15 @@ const _sfc_main$3 = {
     };
   }
 };
-const _hoisted_1$2 = {
+const _hoisted_1$3 = {
   key: 0,
   "data-test": "safeplace-bloc",
   style: { "display": "grid", "gap": "var(--space-1)", "font-size": "0.875rem" }
 };
-const _hoisted_2$2 = { key: 0 };
-const _hoisted_3$2 = ["href"];
-const _hoisted_4$2 = { style: { "color": "var(--color-ink-faint)" } };
-const _sfc_main$2 = {
+const _hoisted_2$3 = { key: 0 };
+const _hoisted_3$3 = ["href"];
+const _hoisted_4$3 = { style: { "color": "var(--color-ink-faint)" } };
+const _sfc_main$3 = {
   __name: "Bloc",
   props: { artiste: { type: Object, required: true } },
   setup(__props) {
@@ -62,7 +62,7 @@ const _sfc_main$2 = {
       item.value = await signalement(props.artiste.id);
     });
     return (_ctx, _cache) => {
-      return item.value ? (__hote$2.openBlock(), __hote$2.createElementBlock("div", _hoisted_1$2, [
+      return item.value ? (__hote$2.openBlock(), __hote$2.createElementBlock("div", _hoisted_1$3, [
         __hote$2.createElementVNode("p", null, [
           _cache[0] || (_cache[0] = __hote$2.createElementVNode("strong", null, "Motif :", -1)),
           __hote$2.createTextVNode(" " + __hote$2.toDisplayString(item.value.reasons || "—"), 1)
@@ -71,22 +71,78 @@ const _sfc_main$2 = {
           _cache[1] || (_cache[1] = __hote$2.createElementVNode("strong", null, "Gravité :", -1)),
           __hote$2.createTextVNode(" " + __hote$2.toDisplayString(__hote$2.unref(GRAVITES)[item.value.severity] || item.value.severity), 1)
         ]),
-        item.value.source_url ? (__hote$2.openBlock(), __hote$2.createElementBlock("p", _hoisted_2$2, [
+        item.value.source_url ? (__hote$2.openBlock(), __hote$2.createElementBlock("p", _hoisted_2$3, [
           _cache[2] || (_cache[2] = __hote$2.createElementVNode("strong", null, "Source :", -1)),
           __hote$2.createElementVNode("a", {
             href: item.value.source_url,
             target: "_blank",
             rel: "noopener",
             style: { "text-decoration": "underline" }
-          }, __hote$2.toDisplayString(item.value.source_url), 9, _hoisted_3$2)
+          }, __hote$2.toDisplayString(item.value.source_url), 9, _hoisted_3$3)
         ])) : __hote$2.createCommentVNode("", true),
-        __hote$2.createElementVNode("p", _hoisted_4$2, [
+        __hote$2.createElementVNode("p", _hoisted_4$3, [
           __hote$2.createTextVNode(__hote$2.toDisplayString(__hote$2.unref(PAR)[item.value.flagged_by] || item.value.flagged_by), 1),
           item.value.pending_review ? (__hote$2.openBlock(), __hote$2.createElementBlock(__hote$2.Fragment, { key: 0 }, [
             __hote$2.createTextVNode(" · en attente de validation")
           ], 64)) : __hote$2.createCommentVNode("", true),
           __hote$2.createTextVNode(" · " + __hote$2.toDisplayString(__hote$2.unref(dateCourte)(item.value.flagged_at)), 1)
         ])
+      ])) : __hote$2.createCommentVNode("", true);
+    };
+  }
+};
+const _hoisted_1$2 = {
+  key: 0,
+  "data-test": "safeplace-carte",
+  style: { "display": "grid", "grid-template-columns": "auto 1fr", "gap": "var(--space-1) var(--space-3)", "font-size": "0.875rem", "margin": "0" }
+};
+const _hoisted_2$2 = { style: { "margin": "0" } };
+const _hoisted_3$2 = {
+  key: 0,
+  style: { "color": "var(--color-ink-faint)" }
+};
+const _hoisted_4$2 = { style: { "margin": "0" } };
+const _hoisted_5$2 = { style: { "margin": "0" } };
+const _hoisted_6$2 = { style: { "margin": "0", "overflow-wrap": "anywhere" } };
+const _hoisted_7$1 = ["href"];
+const _sfc_main$2 = {
+  __name: "CarteChat",
+  props: { action: { type: Object, required: true } },
+  setup(__props) {
+    const props = __props;
+    const { api: api2 } = globalThis.__unisson__;
+    const artiste = __hote$2.ref(null);
+    __hote$2.onMounted(async () => {
+      var _a;
+      const id = (_a = props.action.targets) == null ? void 0 : _a[0];
+      if (id == null) return;
+      artiste.value = await api2.get(`/artists/${id}`).catch(() => null);
+    });
+    return (_ctx, _cache) => {
+      var _a, _b, _c, _d, _e, _f, _g;
+      return __props.action.action_type === "safeplace.signaler" ? (__hote$2.openBlock(), __hote$2.createElementBlock("dl", _hoisted_1$2, [
+        _cache[1] || (_cache[1] = __hote$2.createElementVNode("dt", { style: { "color": "var(--color-ink-faint)" } }, "Artiste", -1)),
+        __hote$2.createElementVNode("dd", _hoisted_2$2, [
+          __hote$2.createTextVNode(__hote$2.toDisplayString(((_a = artiste.value) == null ? void 0 : _a.folder_name) ?? `#${(_b = __props.action.targets) == null ? void 0 : _b[0]}`) + " ", 1),
+          ((_c = artiste.value) == null ? void 0 : _c.folder_path) ? (__hote$2.openBlock(), __hote$2.createElementBlock("span", _hoisted_3$2, "(dossier : " + __hote$2.toDisplayString(artiste.value.folder_path) + ")", 1)) : __hote$2.createCommentVNode("", true)
+        ]),
+        _cache[2] || (_cache[2] = __hote$2.createElementVNode("dt", { style: { "color": "var(--color-ink-faint)" } }, "Motif", -1)),
+        __hote$2.createElementVNode("dd", _hoisted_4$2, __hote$2.toDisplayString(((_d = __props.action.params) == null ? void 0 : _d.reasons) || "—"), 1),
+        _cache[3] || (_cache[3] = __hote$2.createElementVNode("dt", { style: { "color": "var(--color-ink-faint)" } }, "Sévérité", -1)),
+        __hote$2.createElementVNode("dd", _hoisted_5$2, __hote$2.toDisplayString(__hote$2.unref(GRAVITES)[(_e = __props.action.params) == null ? void 0 : _e.severity] || ((_f = __props.action.params) == null ? void 0 : _f.severity) || __hote$2.unref(GRAVITES).autre), 1),
+        ((_g = __props.action.params) == null ? void 0 : _g.source_url) ? (__hote$2.openBlock(), __hote$2.createElementBlock(__hote$2.Fragment, { key: 0 }, [
+          _cache[0] || (_cache[0] = __hote$2.createElementVNode("dt", { style: { "color": "var(--color-ink-faint)" } }, "Source", -1)),
+          __hote$2.createElementVNode("dd", _hoisted_6$2, [
+            __hote$2.createElementVNode("a", {
+              href: __props.action.params.source_url,
+              target: "_blank",
+              rel: "noopener",
+              style: { "text-decoration": "underline" }
+            }, __hote$2.toDisplayString(__props.action.params.source_url) + " ↗", 9, _hoisted_7$1)
+          ])
+        ], 64)) : __hote$2.createCommentVNode("", true),
+        _cache[4] || (_cache[4] = __hote$2.createElementVNode("dt", { style: { "color": "var(--color-ink-faint)" } }, "Ensuite", -1)),
+        _cache[5] || (_cache[5] = __hote$2.createElementVNode("dd", { style: { "margin": "0", "color": "var(--color-ink-muted)" } }, " signalement confirmé ; la mise à la corbeille reste un geste séparé, depuis la page Safeplace ", -1))
       ])) : __hote$2.createCommentVNode("", true);
     };
   }
@@ -489,13 +545,14 @@ const _sfc_main = {
 };
 function installer(hote2, enregistrer) {
   enregistrer.page({ chemin: "/", libelle: "Safeplace", icone: "⚑", composant: _sfc_main$1 });
-  enregistrer.emplacement("fiche-artiste.entete", { composant: _sfc_main$3 });
-  enregistrer.emplacement("fiche-artiste.blocs", { titre: "Signalement", composant: _sfc_main$2 });
+  enregistrer.emplacement("fiche-artiste.entete", { composant: _sfc_main$4 });
+  enregistrer.emplacement("fiche-artiste.blocs", { titre: "Signalement", composant: _sfc_main$3 });
   enregistrer.emplacement("fiche-artiste.hub", {
     titre: "Signaler",
     description: "Signaler cet artiste, ou revoir son signalement.",
     ecran: _sfc_main
   });
+  enregistrer.emplacement("chat.carte-action", { composant: _sfc_main$2 });
 }
 export {
   installer

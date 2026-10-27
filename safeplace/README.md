@@ -20,16 +20,22 @@ aussi l'exemple complet du guide des plugins (`docs/plugins.md` du cœur).
   inconnue), `GET /flags/{artist_id}` (`null` sans signalement),
   `POST /flags` (pose ou met à jour, 404 si l'artiste n'existe pas),
   `PUT /flags/{artist_id}/confirm`, `DELETE /flags/{artist_id}`.
-- **Deux outils de l'assistant** : `safeplace_check_artist_status` (lecture,
-  nom rapproché à 80) et `safeplace_suggest_addition`, qui pose un signalement
-  **en attente** (`flagged_by="serge"`, `pending_review=1`) sans jamais
-  rétrograder un signalement acté. L'opérateur confirme ou rejette depuis la
-  page.
+- **Un outil de l'assistant** : `safeplace_check_artist_status` (lecture, nom
+  rapproché à 80 ; rend l'`artist_id` d'un artiste de la bibliothèque pas
+  encore signalé).
+- **Une carte d'action dans le chat** (cœur ≥ 0.2, #931) : le type
+  d'opération `safeplace.signaler`, proposé par `propose_action`. Valider la
+  carte le tamponne ; l'appliquer pose un signalement **confirmé** (ou
+  confirme une suggestion en attente), le révoquer le retire, et un
+  signalement déjà acté le range sans effet. La corbeille reste un geste à
+  part, depuis la page. L'ancien `safeplace_suggest_addition`, qui écrivait
+  sans passer par l'opérateur, est retiré.
 - **Écrans (admin)** : une page « Safeplace » dans Extensions (en attente,
   liste filtrable, « Proposer la corbeille », « Retirer ») ; sur la fiche
   artiste, un badge « ⚑ Signalé » (`fiche-artiste.entete`), un bloc
   « Signalement » (`fiche-artiste.blocs`) et une carte « Signaler »
-  (`fiche-artiste.hub`).
+  (`fiche-artiste.hub`) ; dans le chat, le détail de la carte
+  `safeplace.signaler` (`chat.carte-action`).
 - **La corbeille reste au cœur** : « Proposer la corbeille » tamponne un
   `trash_artist` avec la provenance `safeplace`. Le plugin l'utilise, il ne le
   possède pas.
