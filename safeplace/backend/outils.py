@@ -49,7 +49,7 @@ def fabriquer(ctx):
         async with ctx.session() as s:
             trouve = await _trouver(
                 s, nom,
-                "SELECT a.id, a.folder_name FROM artist_flags f JOIN artists a ON a.id = f.artist_id "
+                "SELECT a.id, a.folder_name FROM plugin_safeplace.artist_flags f JOIN artists a ON a.id = f.artist_id "
                 "WHERE a.trashed = 0",
             )
             if trouve is None:

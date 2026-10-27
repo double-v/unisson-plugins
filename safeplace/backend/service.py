@@ -22,7 +22,7 @@ _NOM = (
 _LIGNE = f"""
     SELECT f.artist_id, {_NOM} AS artist_name, a.genre_id, g.name AS genre_name,
            f.reasons, f.severity, f.source_url, f.flagged_by, f.flagged_at, f.pending_review
-    FROM artist_flags f
+    FROM plugin_safeplace.artist_flags f
     JOIN artists a ON a.id = f.artist_id
     LEFT JOIN genres g ON g.id = a.genre_id
 """
@@ -80,7 +80,7 @@ async def lister(session, *, genre_id=None, severity=None, pending_review=None, 
 
     total = (
         await session.execute(
-            text(f"SELECT count(*) FROM artist_flags f JOIN artists a ON a.id = f.artist_id{where}"),
+            text(f"SELECT count(*) FROM plugin_safeplace.artist_flags f JOIN artists a ON a.id = f.artist_id{where}"),
             valeurs,
         )
     ).scalar_one()
@@ -110,7 +110,7 @@ async def poser(session, *, artist_id, reasons="", severity="autre", source_url=
     """Crée ou met à jour le signalement d'un artiste (une ligne par artiste)."""
     await session.execute(
         text(
-            "INSERT INTO artist_flags (artist_id, reasons, severity, source_url, flagged_by, flagged_at, pending_review) "
+            "INSERT INTO plugin_safeplace.artist_flags (artist_id, reasons, severity, source_url, flagged_by, flagged_at, pending_review) "
             "VALUES (:artist_id, :reasons, :severity, :source_url, :flagged_by, :flagged_at, :pending_review) "
             "ON CONFLICT (artist_id) DO UPDATE SET reasons = excluded.reasons, severity = excluded.severity, "
             "source_url = excluded.source_url, pending_review = excluded.pending_review"
@@ -124,11 +124,11 @@ async def poser(session, *, artist_id, reasons="", severity="autre", source_url=
 
 async def confirmer(session, artist_id: int) -> bool:
     r = await session.execute(
-        text("UPDATE artist_flags SET pending_review = 0 WHERE artist_id = :id"), {"id": artist_id}
+        text("UPDATE plugin_safeplace.artist_flags SET pending_review = 0 WHERE artist_id = :id"), {"id": artist_id}
     )
     return r.rowcount > 0
 
 
 async def retirer(session, artist_id: int) -> bool:
-    r = await session.execute(text("DELETE FROM artist_flags WHERE artist_id = :id"), {"id": artist_id})
+    r = await session.execute(text("DELETE FROM plugin_safeplace.artist_flags WHERE artist_id = :id"), {"id": artist_id})
     return r.rowcount > 0

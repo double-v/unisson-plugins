@@ -11,8 +11,12 @@ aussi l'exemple complet du guide des plugins (`docs/plugins.md` du cœur).
   `artists` en `ON DELETE CASCADE`) : `reasons`, `severity`
   (`accusé`|`condamné`|`autre`), `source_url`, `flagged_by` (`user`|`serge`),
   `flagged_at` (chaîne ISO), `pending_review` (1 = suggestion de l'assistant à
-  valider). La révision `5afe00000001` la crée sur une base neuve et
-  **l'adopte** telle quelle sur une base où le cœur l'avait créée.
+  valider). Elle vit dans le schéma du plugin, **`plugin_safeplace`**
+  (cœur ≥ 0.3, un schéma par plugin) : la révision `5afe00000001` la crée sur
+  une base neuve et l'**adopte en la déplaçant** (`SET SCHEMA`, sans copie)
+  sur une base où le cœur l'avait créée ; `5afe00000002` déplace celle
+  qu'une 1.1.x avait laissée dans `public`. Lignes, identifiants, index et
+  clé vers `artists` suivent.
 - **Routes** sous `/api/plugins/safeplace/` :
   `GET /flags` (`PageOut`, enrichi de `artist_name`, `genre_name`,
   `album_count`, `total_size_bytes` hors corbeille ; filtres `genre_id`,
@@ -67,5 +71,6 @@ PYTHONPATH=. TEST_DATABASE_URL=postgresql+asyncpg://dedup:dedup@localhost:5432/d
   -c backend/pyproject.toml --rootdir=backend -p backend.tests.conftest
 ```
 
-L'adoption de la table est testée côté cœur
-(`backend/tests/test_adoption_artist_flags.py`), sur cette révision-ci.
+L'adoption de la table (base neuve, base peuplée, bascule d'une 1.1.x) est
+testée côté cœur (`backend/tests/test_adoption_artist_flags.py`) sur cette
+chaîne-ci : `UNISSON_PLUGINS_SRC=<unisson-plugins>` la désigne.
