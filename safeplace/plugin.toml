@@ -1,0 +1,15 @@
+id = "safeplace"
+nom = "Safeplace"
+version = "1.0.0"
+description = "Signaler des artistes (accusations, condamnations) et proposer de les mettre à la corbeille."
+categorie = "officiel"
+coeur = ">=0.1"
+actif_par_defaut = false
+
+[front_abi]
+admin = 1
+
+[apporte]
+routes = true
+migrations = true
+outils_chat = ["safeplace_check_artist_status", "safeplace_suggest_addition"]
