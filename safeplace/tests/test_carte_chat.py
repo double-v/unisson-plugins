@@ -57,17 +57,37 @@ async def test_appliquer_confirme_puis_annuler_retire(client, artiste):
     assert (await _appliquer(client, op_id))["status"] == "applied"
     item = (await client.get(f"{BASE}/{artiste}")).json()
     assert (item["pending_review"], item["severity"], item["source_url"]) == (0, "condamné", "https://exemple.org/a")
+    assert item["flagged_by"] == "carte"
 
     r = await client.post(f"/api/operations/staged/{op_id}/revert")
     assert r.status_code == 200, r.text
     assert (await client.get(f"{BASE}/{artiste}")).json() is None
 
 
-async def test_une_suggestion_en_attente_se_confirme(client, artiste):
-    await client.post(BASE, json={"artist_id": artiste, "severity": "accusé", "pending_review": 1})
+async def test_une_suggestion_en_attente_se_confirme_et_y_retourne(client, artiste):
+    await client.post(BASE, json={
+        "artist_id": artiste, "reasons": "Source d'origine", "severity": "accusé",
+        "flagged_by": "serge", "pending_review": 1,
+    })
     op_id = await _tamponner(client, artiste)
     assert (await _appliquer(client, op_id))["status"] == "applied"
-    assert (await client.get(f"{BASE}/{artiste}")).json()["pending_review"] == 0
+    item = (await client.get(f"{BASE}/{artiste}")).json()
+    # Confirmée, et ses motifs restent les siens.
+    assert (item["pending_review"], item["reasons"], item["severity"]) == (0, "Source d'origine", "accusé")
+
+    assert (await client.post(f"/api/operations/staged/{op_id}/revert")).status_code == 200
+    item = (await client.get(f"{BASE}/{artiste}")).json()
+    assert (item["pending_review"], item["reasons"], item["flagged_by"]) == (1, "Source d'origine", "serge")
+
+
+async def test_un_artiste_a_la_corbeille_n_est_pas_signale(client, artiste, db_session):
+    from sqlalchemy import text
+
+    op_id = await _tamponner(client, artiste)
+    await db_session.execute(text("UPDATE artists SET trashed = 1 WHERE id = :id"), {"id": artiste})
+    await db_session.commit()
+    assert (await _appliquer(client, op_id))["status"] != "applied"
+    assert (await client.get(f"{BASE}/{artiste}")).json() is None
 
 
 async def test_deja_signale_est_range_sans_effet(client, artiste):

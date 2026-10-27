@@ -25,9 +25,11 @@ aussi l'exemple complet du guide des plugins (`docs/plugins.md` du cœur).
   encore signalé).
 - **Une carte d'action dans le chat** (cœur ≥ 0.2, #931) : le type
   d'opération `safeplace.signaler`, proposé par `propose_action`. Valider la
-  carte le tamponne ; l'appliquer pose un signalement **confirmé** (ou
-  confirme une suggestion en attente), le révoquer le retire, et un
-  signalement déjà acté le range sans effet. La corbeille reste un geste à
+  carte le tamponne ; l'appliquer pose un signalement **confirmé**
+  (`flagged_by="carte"`), ou confirme une suggestion en attente sans
+  réécrire ses motifs. Le révoquer ramène à l'état d'avant (retiré, ou de
+  nouveau en attente) ; un signalement déjà acté, un artiste à la corbeille
+  ou disparu sont rangés sans effet. La corbeille reste un geste à
   part, depuis la page. L'ancien `safeplace_suggest_addition`, qui écrivait
   sans passer par l'opérateur, est retiré.
 - **Écrans (admin)** : une page « Safeplace » dans Extensions (en attente,

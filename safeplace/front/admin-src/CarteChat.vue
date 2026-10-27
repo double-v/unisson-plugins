@@ -6,10 +6,13 @@
     data-test="safeplace-carte"
     style="display: grid; grid-template-columns: auto 1fr; gap: var(--space-1) var(--space-3); font-size: 0.875rem; margin: 0"
   >
-    <dt style="color: var(--color-ink-faint)">Artiste</dt>
+    <dt style="color: var(--color-ink-faint)">{{ artistes.length > 1 ? "Artistes" : "Artiste" }}</dt>
     <dd style="margin: 0">
-      {{ artiste?.folder_name ?? `#${action.targets?.[0]}` }}
-      <span v-if="artiste?.folder_path" style="color: var(--color-ink-faint)">(dossier : {{ artiste.folder_path }})</span>
+      <!-- Toutes les cibles : chacune devient un signalement au tampon. -->
+      <div v-for="a in artistes" :key="a.id">
+        {{ a.folder_name ?? `#${a.id}` }}
+        <span v-if="a.folder_path" style="color: var(--color-ink-faint)">(dossier : {{ a.folder_path }})</span>
+      </div>
     </dd>
     <dt style="color: var(--color-ink-faint)">Motif</dt>
     <dd style="margin: 0">{{ action.params?.reasons || "—" }}</dd>
@@ -34,12 +37,12 @@ import { GRAVITES } from "./donnees.js";
 
 const props = defineProps({ action: { type: Object, required: true } });
 const { api } = globalThis.__unisson__;
-const artiste = ref(null);
+const artistes = ref((props.action.targets ?? []).map((id) => ({ id })));
 
 onMounted(async () => {
-  const id = props.action.targets?.[0];
-  if (id == null) return;
   // Le nom et le dossier, pour qu'on sache qui on signale ; l'id seul sinon.
-  artiste.value = await api.get(`/artists/${id}`).catch(() => null);
+  artistes.value = await Promise.all(
+    artistes.value.map(({ id }) => api.get(`/artists/${id}`).then((a) => ({ ...a, id })).catch(() => ({ id }))),
+  );
 });
 </script>

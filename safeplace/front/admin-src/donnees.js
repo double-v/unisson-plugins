@@ -4,7 +4,11 @@ const { api } = globalThis.__unisson__;
 const cache = new Map();
 
 export const GRAVITES = { "condamné": "Condamné", "accusé": "Accusé", "autre": "Autre" };
-export const PAR = { user: "Signalé par vous", serge: "Suggéré par l'assistant" };
+export const PAR = {
+  user: "Signalé par vous",
+  serge: "Suggéré par l'assistant",
+  carte: "Proposé par l'assistant, validé par vous",
+};
 
 export function signalement(artistId) {
   if (!cache.has(artistId)) cache.set(artistId, api.get(`/plugins/safeplace/flags/${artistId}`).catch(() => null));

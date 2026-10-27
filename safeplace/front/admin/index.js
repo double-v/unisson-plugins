@@ -3,7 +3,11 @@ const __hote$1 = globalThis.__unisson__.vueRouter;
 const { api } = globalThis.__unisson__;
 const cache = /* @__PURE__ */ new Map();
 const GRAVITES = { "condamné": "Condamné", "accusé": "Accusé", "autre": "Autre" };
-const PAR = { user: "Signalé par vous", serge: "Suggéré par l'assistant" };
+const PAR = {
+  user: "Signalé par vous",
+  serge: "Suggéré par l'assistant",
+  carte: "Proposé par l'assistant, validé par vous"
+};
 function signalement(artistId) {
   if (!cache.has(artistId)) cache.set(artistId, api.get(`/plugins/safeplace/flags/${artistId}`).catch(() => null));
   return cache.get(artistId);
@@ -96,53 +100,59 @@ const _hoisted_1$2 = {
   "data-test": "safeplace-carte",
   style: { "display": "grid", "grid-template-columns": "auto 1fr", "gap": "var(--space-1) var(--space-3)", "font-size": "0.875rem", "margin": "0" }
 };
-const _hoisted_2$2 = { style: { "margin": "0" } };
-const _hoisted_3$2 = {
+const _hoisted_2$2 = { style: { "color": "var(--color-ink-faint)" } };
+const _hoisted_3$2 = { style: { "margin": "0" } };
+const _hoisted_4$2 = {
   key: 0,
   style: { "color": "var(--color-ink-faint)" }
 };
-const _hoisted_4$2 = { style: { "margin": "0" } };
 const _hoisted_5$2 = { style: { "margin": "0" } };
-const _hoisted_6$2 = { style: { "margin": "0", "overflow-wrap": "anywhere" } };
-const _hoisted_7$1 = ["href"];
+const _hoisted_6$2 = { style: { "margin": "0" } };
+const _hoisted_7$1 = { style: { "margin": "0", "overflow-wrap": "anywhere" } };
+const _hoisted_8$1 = ["href"];
 const _sfc_main$2 = {
   __name: "CarteChat",
   props: { action: { type: Object, required: true } },
   setup(__props) {
     const props = __props;
     const { api: api2 } = globalThis.__unisson__;
-    const artiste = __hote$2.ref(null);
+    const artistes = __hote$2.ref((props.action.targets ?? []).map((id) => ({ id })));
     __hote$2.onMounted(async () => {
-      var _a;
-      const id = (_a = props.action.targets) == null ? void 0 : _a[0];
-      if (id == null) return;
-      artiste.value = await api2.get(`/artists/${id}`).catch(() => null);
+      artistes.value = await Promise.all(
+        artistes.value.map(({ id }) => api2.get(`/artists/${id}`).then((a) => ({ ...a, id })).catch(() => ({ id })))
+      );
     });
     return (_ctx, _cache) => {
-      var _a, _b, _c, _d, _e, _f, _g;
+      var _a, _b, _c, _d;
       return __props.action.action_type === "safeplace.signaler" ? (__hote$2.openBlock(), __hote$2.createElementBlock("dl", _hoisted_1$2, [
-        _cache[1] || (_cache[1] = __hote$2.createElementVNode("dt", { style: { "color": "var(--color-ink-faint)" } }, "Artiste", -1)),
-        __hote$2.createElementVNode("dd", _hoisted_2$2, [
-          __hote$2.createTextVNode(__hote$2.toDisplayString(((_a = artiste.value) == null ? void 0 : _a.folder_name) ?? `#${(_b = __props.action.targets) == null ? void 0 : _b[0]}`) + " ", 1),
-          ((_c = artiste.value) == null ? void 0 : _c.folder_path) ? (__hote$2.openBlock(), __hote$2.createElementBlock("span", _hoisted_3$2, "(dossier : " + __hote$2.toDisplayString(artiste.value.folder_path) + ")", 1)) : __hote$2.createCommentVNode("", true)
+        __hote$2.createElementVNode("dt", _hoisted_2$2, __hote$2.toDisplayString(artistes.value.length > 1 ? "Artistes" : "Artiste"), 1),
+        __hote$2.createElementVNode("dd", _hoisted_3$2, [
+          (__hote$2.openBlock(true), __hote$2.createElementBlock(__hote$2.Fragment, null, __hote$2.renderList(artistes.value, (a) => {
+            return __hote$2.openBlock(), __hote$2.createElementBlock("div", {
+              key: a.id
+            }, [
+              __hote$2.createTextVNode(__hote$2.toDisplayString(a.folder_name ?? `#${a.id}`) + " ", 1),
+              a.folder_path ? (__hote$2.openBlock(), __hote$2.createElementBlock("span", _hoisted_4$2, "(dossier : " + __hote$2.toDisplayString(a.folder_path) + ")", 1)) : __hote$2.createCommentVNode("", true)
+            ]);
+          }), 128))
         ]),
-        _cache[2] || (_cache[2] = __hote$2.createElementVNode("dt", { style: { "color": "var(--color-ink-faint)" } }, "Motif", -1)),
-        __hote$2.createElementVNode("dd", _hoisted_4$2, __hote$2.toDisplayString(((_d = __props.action.params) == null ? void 0 : _d.reasons) || "—"), 1),
-        _cache[3] || (_cache[3] = __hote$2.createElementVNode("dt", { style: { "color": "var(--color-ink-faint)" } }, "Sévérité", -1)),
-        __hote$2.createElementVNode("dd", _hoisted_5$2, __hote$2.toDisplayString(__hote$2.unref(GRAVITES)[(_e = __props.action.params) == null ? void 0 : _e.severity] || ((_f = __props.action.params) == null ? void 0 : _f.severity) || __hote$2.unref(GRAVITES).autre), 1),
-        ((_g = __props.action.params) == null ? void 0 : _g.source_url) ? (__hote$2.openBlock(), __hote$2.createElementBlock(__hote$2.Fragment, { key: 0 }, [
+        _cache[1] || (_cache[1] = __hote$2.createElementVNode("dt", { style: { "color": "var(--color-ink-faint)" } }, "Motif", -1)),
+        __hote$2.createElementVNode("dd", _hoisted_5$2, __hote$2.toDisplayString(((_a = __props.action.params) == null ? void 0 : _a.reasons) || "—"), 1),
+        _cache[2] || (_cache[2] = __hote$2.createElementVNode("dt", { style: { "color": "var(--color-ink-faint)" } }, "Sévérité", -1)),
+        __hote$2.createElementVNode("dd", _hoisted_6$2, __hote$2.toDisplayString(__hote$2.unref(GRAVITES)[(_b = __props.action.params) == null ? void 0 : _b.severity] || ((_c = __props.action.params) == null ? void 0 : _c.severity) || __hote$2.unref(GRAVITES).autre), 1),
+        ((_d = __props.action.params) == null ? void 0 : _d.source_url) ? (__hote$2.openBlock(), __hote$2.createElementBlock(__hote$2.Fragment, { key: 0 }, [
           _cache[0] || (_cache[0] = __hote$2.createElementVNode("dt", { style: { "color": "var(--color-ink-faint)" } }, "Source", -1)),
-          __hote$2.createElementVNode("dd", _hoisted_6$2, [
+          __hote$2.createElementVNode("dd", _hoisted_7$1, [
             __hote$2.createElementVNode("a", {
               href: __props.action.params.source_url,
               target: "_blank",
               rel: "noopener",
               style: { "text-decoration": "underline" }
-            }, __hote$2.toDisplayString(__props.action.params.source_url) + " ↗", 9, _hoisted_7$1)
+            }, __hote$2.toDisplayString(__props.action.params.source_url) + " ↗", 9, _hoisted_8$1)
           ])
         ], 64)) : __hote$2.createCommentVNode("", true),
-        _cache[4] || (_cache[4] = __hote$2.createElementVNode("dt", { style: { "color": "var(--color-ink-faint)" } }, "Ensuite", -1)),
-        _cache[5] || (_cache[5] = __hote$2.createElementVNode("dd", { style: { "margin": "0", "color": "var(--color-ink-muted)" } }, " signalement confirmé ; la mise à la corbeille reste un geste séparé, depuis la page Safeplace ", -1))
+        _cache[3] || (_cache[3] = __hote$2.createElementVNode("dt", { style: { "color": "var(--color-ink-faint)" } }, "Ensuite", -1)),
+        _cache[4] || (_cache[4] = __hote$2.createElementVNode("dd", { style: { "margin": "0", "color": "var(--color-ink-muted)" } }, " signalement confirmé ; la mise à la corbeille reste un geste séparé, depuis la page Safeplace ", -1))
       ])) : __hote$2.createCommentVNode("", true);
     };
   }
