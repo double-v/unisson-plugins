@@ -29,6 +29,11 @@ class Injoignable(Exception):
     """L'ampli n'est pas connecté au moment d'envoyer."""
 
 
+# Erreurs d'une configuration fausse (port hors bornes, hôte illisible) :
+# journalisées et réessayées comme une panne réseau, jamais fatales.
+ERREURS_DE_CONNEXION = (OSError, asyncio.TimeoutError, OverflowError, UnicodeError, ValueError)
+
+
 @dataclass(frozen=True)
 class Config:
     hote: str
@@ -54,6 +59,7 @@ class Lien:
         self.etat = {"connected": False, "power": None, "volume": None, "mute": None, "source": None, "updatedAt": None}
         self._file: asyncio.Queue = asyncio.Queue()
         self._ecrivain: asyncio.StreamWriter | None = None
+        self._arrete = False
         self.config = config()
 
     @property
@@ -68,30 +74,36 @@ class Lien:
         """Met une commande en file ; rend la main quand elle est partie."""
         if not self.pilote.valider(commande):
             raise ValueError("Commande Denon invalide")
+        if self._arrete:
+            raise Injoignable("Proxy arrêté")
         fut = asyncio.get_running_loop().create_future()
         self._file.put_nowait((commande, fut))
         await fut
 
     async def tourner(self) -> None:
         """La tâche de fond : connexion, lecture, envoi, reconnexion."""
+        self._arrete = False
         envoi = asyncio.create_task(self._vider())
         essais = 0
         try:
             while True:
+                if envoi.done():  # l'envoi ne doit jamais mourir en silence
+                    raise RuntimeError("la file d'envoi s'est arrêtée") from envoi.exception()
                 self.config = cfg = self._config()
                 if not cfg.hote:
                     await asyncio.sleep(self.attente_max)
                     continue
                 try:
                     lecteur, ecrivain = await asyncio.wait_for(asyncio.open_connection(cfg.hote, cfg.port), 5)
-                except (OSError, asyncio.TimeoutError) as e:
+                except ERREURS_DE_CONNEXION as e:
                     self.journal.debug("ampli %s:%s injoignable : %s", cfg.hote, cfg.port, e)
                 else:
                     essais = 0
                     await self._session(lecteur, ecrivain)
                 await asyncio.sleep(min(self.attente_min * 2**essais, self.attente_max))
-                essais += 1
+                essais = min(essais + 1, 16)  # 2**essais ne déborde jamais
         finally:
+            self._arrete = True
             envoi.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await envoi
@@ -132,7 +144,9 @@ class Lien:
     async def _vider(self) -> None:
         while True:
             commande, fut = await self._file.get()
-            if not fut.done():
+            if fut.done():  # client parti : pas de créneau consommé
+                continue
+            try:
                 if self._ecrivain is None:
                     fut.set_exception(Injoignable("Ampli injoignable"))
                 else:
@@ -142,4 +156,7 @@ class Lien:
                         fut.set_result(None)
                     except OSError as e:
                         fut.set_exception(Injoignable(str(e)))
+            finally:
+                if not fut.done():  # annulée pendant drain()
+                    fut.set_exception(Injoignable("Proxy arrêté"))
             await asyncio.sleep(self.config.cadence_s)

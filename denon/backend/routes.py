@@ -27,6 +27,11 @@ class NonAutorise(Exception):
     pass
 
 
+class CorpsInvalide(Exception):
+    def __init__(self, statut: int, code: str):
+        self.statut, self.code = statut, code
+
+
 class _Route(APIRoute):
     """Rend le refus du jeton au format de denon-api. Le routeur est monté
     dans l'app du cœur : il ne peut pas y poser de gestionnaire d'erreur."""
@@ -39,6 +44,8 @@ class _Route(APIRoute):
                 return await traiter(request)
             except NonAutorise:
                 return JSONResponse({"error": "unauthorized"}, status_code=401)
+            except CorpsInvalide as e:
+                return JSONResponse({"error": e.code}, status_code=e.statut)
 
         return gestionnaire
 
@@ -49,17 +56,29 @@ def fabriquer(lien: Lien, jeton: Callable[[], str]) -> APIRouter:
 
     def garde(request: Request) -> None:
         attendu = jeton()
-        if attendu and not secrets.compare_digest(request.headers.get("authorization", ""), f"Bearer {attendu}"):
+        if not attendu:
+            return
+        # En octets : compare_digest lève sur une chaîne non ASCII. Starlette
+        # décode les en-têtes en latin-1 : ré-encoder rend les octets reçus.
+        recu = request.headers.get("authorization", "").encode("latin-1")
+        if not secrets.compare_digest(recu, f"Bearer {attendu}".encode("utf-8")):
             raise NonAutorise
 
     protege = [Depends(garde)]
 
     async def corps(request: Request) -> dict:
+        """Comme Fastify : un corps présent doit être du JSON valide (sinon
+        400, ou 415 pour un autre type), jamais lu comme un corps vide — un
+        `on=true` en formulaire éteindrait l'ampli."""
         brut = await request.body()
-        try:
-            valeur = json.loads(brut) if brut else {}
-        except ValueError:
+        if not brut:
             return {}
+        if "json" not in request.headers.get("content-type", "application/json").lower():
+            raise CorpsInvalide(415, "unsupported_media_type")
+        try:
+            valeur = json.loads(brut)
+        except ValueError:
+            raise CorpsInvalide(400, "invalid_json") from None
         return valeur if isinstance(valeur, dict) else {}
 
     async def envoyer(commande: str):
@@ -94,16 +113,17 @@ def fabriquer(lien: Lien, jeton: Callable[[], str]) -> APIRouter:
 
     @router.post("/api/power", dependencies=protege)
     async def alimentation(request: Request):
-        return await envoyer(pilote.alimentation(bool((await corps(request)).get("on"))))
+        return await envoyer(pilote.alimentation(_vrai((await corps(request)).get("on"))))
 
     @router.post("/api/mute", dependencies=protege)
     async def sourdine(request: Request):
-        return await envoyer(pilote.sourdine(bool((await corps(request)).get("muted"))))
+        return await envoyer(pilote.sourdine(_vrai((await corps(request)).get("muted"))))
 
     @router.post("/api/source", dependencies=protege)
     async def source(request: Request):
         valeur = (await corps(request)).get("source")
-        source = str(valeur if valeur is not None else "").upper()
+        # String(x || '') de denon-api : false, 0, null, "" donnent "".
+        source = ("" if not _vrai(valeur) else "TRUE" if valeur is True else str(valeur)).upper()
         if not _SOURCE.fullmatch(source):
             return JSONResponse({"error": "invalid_source"}, status_code=400)
         return await envoyer(pilote.source(source))
@@ -124,6 +144,11 @@ def fabriquer(lien: Lien, jeton: Callable[[], str]) -> APIRouter:
         return await envoyer(pilote.volume_moins())
 
     return router
+
+
+def _vrai(valeur) -> bool:
+    """`Boolean(x)` de JavaScript : une liste ou un objet, même vides, sont vrais."""
+    return True if isinstance(valeur, (list, dict)) else bool(valeur)
 
 
 def _nombre(valeur) -> float | None:

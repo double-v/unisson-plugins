@@ -1,14 +1,17 @@
 """L'écoute à part, sur l'ancien port de `denon-api` (8100 chez nous).
 
 Le même routeur que sous `/api/plugins/denon/`, servi seul par un second
-serveur uvicorn dans le processus d'unisson. Deux pièges d'uvicorn évités :
+serveur uvicorn dans le processus d'unisson. Trois pièges d'uvicorn évités :
 
 - `serve()` capture SIGINT/SIGTERM : un second serveur les volerait à celui
   d'unisson. On lui laisse les signaux (`capture_signals` neutralisé) ; il
   s'arrête quand la tâche du plugin est annulée ;
 - un port déjà pris fait `sys.exit(1)` au démarrage, qui remonterait hors de
   la boucle et ferait tomber unisson. Le socket est donc réservé ici : un
-  échec se journalise, et le plugin continue sous `/api/plugins/denon/`.
+  échec se journalise, et le plugin continue sous `/api/plugins/denon/` ;
+- `uvicorn.Config` reconfigure les loggers partagés du processus
+  (`uvicorn.error`, `uvicorn.access`) dès sa construction : `log_config=None`,
+  sans `log_level` ni `access_log=False`, les laisse à unisson.
 """
 
 from __future__ import annotations
@@ -46,12 +49,12 @@ async def servir(router: APIRouter, port: int, journal: logging.Logger, hote: st
         return
     try:
         sock = reserver(port, hote)
-    except OSError as e:
+    except (OSError, OverflowError, ValueError) as e:  # port pris, hors bornes
         journal.error("écoute à part impossible sur le port %s : %s (les routes restent sous /api/plugins/denon/)", port, e)
         return
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
     app.include_router(router)
-    serveur = _Serveur(uvicorn.Config(app, lifespan="off", log_level="warning", access_log=False, timeout_graceful_shutdown=2))
+    serveur = _Serveur(uvicorn.Config(app, lifespan="off", log_config=None, timeout_graceful_shutdown=2))
     journal.info("API denon-api servie aussi sur le port %s", port)
     tache = asyncio.create_task(serveur.serve(sockets=[sock]))
     try:

@@ -214,3 +214,72 @@ async def test_signaux_laisses_a_unisson_et_port_rendu(faux_ampli):
     await asyncio.gather(tache, return_exceptions=True)
     assert tache.cancelled()
     ecoute.reserver(port, "127.0.0.1").close()  # le port est libéré
+
+
+# ── constats de la relecture de la PR #5 ────────────────────────────────────
+
+
+async def test_volume_entier_comme_denon_api(api):
+    client, ampli, *_ = api
+    await ampli.pousser("MV45\r")
+    await asyncio.sleep(0.05)
+    assert '"volume":-35,' in (await client.get("/api/state")).text
+
+
+async def test_jeton_accentue_et_entete_non_ascii(api):
+    client, _, reglages, _ = api
+    reglages["jeton"] = "motdepassé"
+    client.headers.pop("Authorization")
+    bon = await client.get("/api/state", headers={"Authorization": "Bearer motdepassé".encode()})
+    assert bon.status_code == 200
+    faux = await client.get("/api/state", headers={"Authorization": "Bearer é".encode("latin-1")})
+    assert (faux.status_code, faux.json()) == (401, {"error": "unauthorized"})
+
+
+@pytest.mark.parametrize("contenu, type_, statut, code", [
+    ("on=true", "application/x-www-form-urlencoded", 415, "unsupported_media_type"),
+    ('{"on": tr', "application/json", 400, "invalid_json"),
+])
+async def test_corps_mal_forme_n_eteint_pas_l_ampli(api, contenu, type_, statut, code):
+    client, ampli, *_ = api
+    avant = list(ampli.commandes)
+    r = await client.post("/api/power", content=contenu, headers={"Content-Type": type_})
+    assert (r.status_code, r.json()) == (statut, {"error": code})
+    await asyncio.sleep(0.05)
+    assert ampli.commandes == avant
+
+
+@pytest.mark.parametrize("corps, statut, commande", [
+    ({"source": False}, 400, None),
+    ({"source": 0}, 400, None),
+    ({"on": []}, 200, "PWON"),
+    ({"muted": {}}, 200, "MUON"),
+])
+async def test_verite_a_la_javascript(api, corps, statut, commande):
+    client, *_ = api
+    chemin = "/api/source" if "source" in corps else "/api/power" if "on" in corps else "/api/mute"
+    r = await client.post(chemin, json=corps)
+    assert r.status_code == statut
+    if commande:
+        assert r.json()["command"] == commande
+
+
+async def test_port_hors_bornes_journalise_sans_tomber(caplog):
+    lien = Lien(lambda: Config("", 23, 0.01), PILOTES["avrx4000"])
+    with caplog.at_level(logging.ERROR):
+        await asyncio.wait_for(ecoute.servir(routes.fabriquer(lien, lambda: ""), 81000, logging.getLogger("t"), "127.0.0.1"), 2)
+    assert "écoute à part impossible" in caplog.text
+
+
+async def test_loggers_d_unisson_intacts(faux_ampli):
+    noms = ("uvicorn", "uvicorn.error", "uvicorn.access")
+    photo = lambda: [(logging.getLogger(n).level, list(logging.getLogger(n).handlers), logging.getLogger(n).propagate) for n in noms]
+    avant = photo()
+    lien = Lien(lambda: Config("127.0.0.1", faux_ampli.port, 0.01), PILOTES["avrx4000"])
+    port = port_libre()
+    tache = asyncio.create_task(ecoute.servir(routes.fabriquer(lien, lambda: ""), port, logging.getLogger("t"), "127.0.0.1"))
+    async with httpx.AsyncClient(base_url=f"http://127.0.0.1:{port}") as client:
+        await attendre_http(client)
+    tache.cancel()
+    await asyncio.gather(tache, return_exceptions=True)
+    assert photo() == avant

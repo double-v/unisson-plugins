@@ -25,7 +25,8 @@ def lire_volume(brut: str) -> float | None:
     if not _VOLUME.fullmatch(brut):
         return None
     valeur = int(brut) / 10 if len(brut) == 3 else int(brut)
-    return _arrondi((valeur - 80) * 10) / 10
+    db = _arrondi((valeur - 80) * 10) / 10
+    return int(db) if db.is_integer() else db  # -35, pas -35.0, comme denon-api
 
 
 class Avrx4000:

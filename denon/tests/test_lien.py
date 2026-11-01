@@ -2,6 +2,7 @@
 reconnexion, arrêt."""
 
 import asyncio
+import socket
 
 import pytest
 
@@ -113,3 +114,39 @@ async def test_arret_ferme_la_socket_et_refuse_la_file(faux_ampli):
         await en_file
     assert not lien.connecte
     await attendre(lambda: faux_ampli.fermetures == 1)
+
+
+# ── constats de la relecture de la PR #5 ────────────────────────────────────
+
+
+async def test_des_milliers_d_echecs_ne_tuent_pas_le_lien():
+    """2**1024 débordait : une nuit d'ampli éteint mettait le plugin en panne."""
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        ferme = s.getsockname()[1]  # lié, jamais à l'écoute : connexion refusée
+        lien = Lien(lambda: Config("127.0.0.1", ferme, 0.0), PILOTES["avrx4000"], attente_min=1e-9, attente_max=1e-9)
+        tache = asyncio.create_task(lien.tourner())
+        await asyncio.sleep(1.5)
+        assert not tache.done(), tache.exception() if tache.done() else None
+        tache.cancel()
+        await asyncio.gather(tache, return_exceptions=True)
+
+
+@pytest.mark.parametrize("hote, port", [("127.0.0.1", 81000), ("a..b", 23)])
+async def test_configuration_fausse_reessayee_sans_tomber(hote, port):
+    lien = Lien(lambda: Config(hote, port, 0.0), PILOTES["avrx4000"], attente_min=0.01, attente_max=0.01)
+    tache = asyncio.create_task(lien.tourner())
+    await asyncio.sleep(0.2)
+    assert not tache.done()
+    tache.cancel()
+    await asyncio.gather(tache, return_exceptions=True)
+
+
+async def test_envoyer_apres_l_arret_refuse_au_lieu_de_pendre(faux_ampli):
+    lien = lien_vers(faux_ampli)
+    tache = asyncio.create_task(lien.tourner())
+    await attendre(lambda: lien.connecte)
+    tache.cancel()
+    await asyncio.gather(tache, return_exceptions=True)
+    with pytest.raises(Injoignable, match="arrêté"):
+        await asyncio.wait_for(lien.envoyer("PWON"), 1)
