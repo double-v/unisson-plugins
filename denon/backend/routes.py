@@ -50,9 +50,9 @@ class _Route(APIRoute):
         return gestionnaire
 
 
-def fabriquer(lien: Lien, jeton: Callable[[], str]) -> APIRouter:
-    router = APIRouter(route_class=_Route)
-    pilote = lien.pilote
+def garde_du_jeton(jeton: Callable[[], str]):
+    """La dépendance qui exige `Authorization: Bearer <jeton>` si un jeton
+    est réglé ; partagée par l'API de denon-api et les routes du réveil."""
 
     def garde(request: Request) -> None:
         attendu = jeton()
@@ -64,22 +64,29 @@ def fabriquer(lien: Lien, jeton: Callable[[], str]) -> APIRouter:
         if not secrets.compare_digest(recu, f"Bearer {attendu}".encode("utf-8")):
             raise NonAutorise
 
-    protege = [Depends(garde)]
+    return garde
 
-    async def corps(request: Request) -> dict:
-        """Comme Fastify : un corps présent doit être du JSON valide (sinon
-        400, ou 415 pour un autre type), jamais lu comme un corps vide — un
-        `on=true` en formulaire éteindrait l'ampli."""
-        brut = await request.body()
-        if not brut:
-            return {}
-        if "json" not in request.headers.get("content-type", "application/json").lower():
-            raise CorpsInvalide(415, "unsupported_media_type")
-        try:
-            valeur = json.loads(brut)
-        except ValueError:
-            raise CorpsInvalide(400, "invalid_json") from None
-        return valeur if isinstance(valeur, dict) else {}
+
+async def corps(request: Request) -> dict:
+    """Comme Fastify : un corps présent doit être du JSON valide (sinon
+    400, ou 415 pour un autre type), jamais lu comme un corps vide — un
+    `on=true` en formulaire éteindrait l'ampli."""
+    brut = await request.body()
+    if not brut:
+        return {}
+    if "json" not in request.headers.get("content-type", "application/json").lower():
+        raise CorpsInvalide(415, "unsupported_media_type")
+    try:
+        valeur = json.loads(brut)
+    except ValueError:
+        raise CorpsInvalide(400, "invalid_json") from None
+    return valeur if isinstance(valeur, dict) else {}
+
+
+def fabriquer(lien: Lien, jeton: Callable[[], str]) -> APIRouter:
+    router = APIRouter(route_class=_Route)
+    pilote = lien.pilote
+    protege = [Depends(garde_du_jeton(jeton))]
 
     async def envoyer(commande: str):
         try:

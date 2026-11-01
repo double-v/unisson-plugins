@@ -8,13 +8,16 @@ les autres, derrière la même API HTTP que `denon-api` :
 - et, si `port_ecoute` est réglé, seule sur ce port, à l'adresse exacte de
   l'ancien conteneur (`http://<nas>:8100/api/state`).
 
-Le réveil (alarmes, lecture UPnP) viendra sur ce lien, dans un lot suivant.
+Le réveil (`docs/reveil.md`) s'y ajoute : les alarmes et leur ordonnanceur
+(lot 3, `alarmes.py`, `ordonnanceur.py`, routes sous `/reveil/`). La séance
+(lecture UPnP) viendra au lot 4, par l'accroche `declencher`.
 """
 
 from unisson.plugin import Contexte
 
-from . import ecoute, routes
+from . import alarmes, ecoute, reveil, routes
 from .lien import Config, Lien
+from .ordonnanceur import Ordonnanceur
 from .pilotes import PILOTES
 
 
@@ -30,9 +33,19 @@ def enregistrer(ctx: Contexte) -> None:
             cadence_s=max(ctx.reglage("cadence_ms"), 0) / 1000,
         )
 
+    # Relu à chaque usage, comme les autres réglages ; vérifié à l'activation.
+    def fuseau():
+        return alarmes.fuseau(ctx.reglage("fuseau"))
+
+    fuseau()
+
     lien = Lien(config, pilote, journal=ctx.journal)
     ctx.routeur(routes.fabriquer(lien, lambda: ctx.secret("jeton")))
     ctx.tache(lien.tourner)
+
+    ordonnanceur = Ordonnanceur(ctx.session, fuseau, journal=ctx.journal)
+    ctx.routeur(reveil.fabriquer(ordonnanceur, ctx.session, fuseau, lambda: ctx.secret("jeton")))
+    ctx.tache(ordonnanceur.tourner)
     # Le port est lu à l'activation : le changer demande de réactiver le plugin.
     if port := ctx.reglage("port_ecoute"):
         seul = routes.fabriquer(lien, lambda: ctx.secret("jeton"))
