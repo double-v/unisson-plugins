@@ -1,13 +1,14 @@
 id = "denon"
 nom = "Denon"
-version = "0.1.0"
+version = "0.2.0"
 description = "Partage l'ampli Denon (une seule connexion telnet) entre unisson, Hublot et les autres : l'API de denon-api, sans conteneur à part."
 categorie = "officiel"
-coeur = ">=0.4"
+coeur = ">=0.4"             # [cles_heritees] (0.4) ; migrations dans plugin_denon (0.3)
 actif_par_defaut = false
 
 [apporte]
 routes = true
+migrations = true           # plugin_denon.alarmes (le réveil)
 
 [[reglages]]
 cle = "hote"
@@ -37,6 +38,11 @@ secret = true               # vide : routes ouvertes, comme denon-api
 cle = "port_ecoute"
 type = "int"
 defaut = 0                  # 8100 : l'adresse de denon-api, pour Hublot ; 0 : pas d'écoute à part
+
+[[reglages]]
+cle = "fuseau"
+type = "str"
+defaut = "Europe/Paris"     # l'heure des alarmes est une heure locale ; nom IANA
 
 [cles_heritees]
 denon_host = "hote"
