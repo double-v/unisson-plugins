@@ -107,3 +107,25 @@ async def denon_installe(tmp_path, monkeypatch):
     chargeur.arreter_tout()
     etat.vider()
     await _retirer_schema()
+
+
+# ── le réveil ───────────────────────────────────────────────────────────
+
+
+@pytest_asyncio.fixture
+async def reveil(client, denon_installe):
+    """Le plugin activé, avec un jeton."""
+    from denon.tests.aides_reveil import JETON, regler
+
+    await regler(client, jeton=JETON)
+    await denon_installe()
+    return client
+
+
+@pytest_asyncio.fixture
+async def table(denon_installe):
+    """La table migrée, le plugin **inactif** : seul l'ordonnanceur du test
+    tourne."""
+    from backend.tests.conftest import test_session_factory
+
+    return test_session_factory

@@ -11,8 +11,7 @@ injectée.
 import asyncio
 import logging
 import time as chrono
-from datetime import datetime, timedelta, timezone
-from zoneinfo import ZoneInfo
+from datetime import datetime, timedelta
 
 import pytest
 from sqlalchemy import text
@@ -20,30 +19,9 @@ from sqlalchemy import text
 from denon.backend import alarmes
 from denon.backend.ordonnanceur import Ordonnanceur
 from denon.tests.aides import attendre
-
-PARIS = ZoneInfo("Europe/Paris")
-UTC = timezone.utc
-JETON = "jeton-de-test"
-AUTH = {"Authorization": f"Bearer {JETON}"}
-LOCAL = {"Host": "localhost", "Origin": "http://localhost"}
-RACINE = "/api/plugins/denon/reveil"
-
-
-async def regler(client, **valeurs):
-    r = await client.put("/api/plugins/denon/settings", json=valeurs, headers=LOCAL)
-    assert r.status_code == 200, r.text
-
-
-@pytest.fixture
-async def reveil(client, denon_installe):
-    """Le plugin activé, avec un jeton."""
-    await regler(client, jeton=JETON)
-    await denon_installe()
-    return client
-
-
-def alarme(**champs) -> dict:
-    return {"nom": "Semaine", "heure": "07:00", "jours": 31, "contexte": "bibliotheque", **champs}
+from denon.tests.aides_reveil import (
+    AUTH, PARIS, RACINE, UTC, Horloge, a_paris, alarme, dans, lire_alarme, ordonnanceur, poser, regler, relire,
+)
 
 
 # ── la migration ────────────────────────────────────────────────────────
@@ -210,48 +188,6 @@ async def test_un_fuseau_inconnu_refuse_l_activation(client, denon_installe):
 # ── l'ordonnanceur, horloge injectée ────────────────────────────────────
 
 
-class Horloge:
-    def __init__(self, depart: datetime):
-        self.t = depart
-
-    def __call__(self) -> datetime:
-        return self.t
-
-
-@pytest.fixture
-async def table(denon_installe):
-    """La table migrée, le plugin **inactif** : seul l'ordonnanceur du test
-    tourne."""
-    from backend.tests.conftest import test_session_factory
-
-    return test_session_factory
-
-
-def ordonnanceur(session, horloge, appels=None) -> Ordonnanceur:
-    async def declencher(a):
-        if appels is not None:
-            appels.append((a["id"], horloge()))
-        return "declenchee"
-
-    return Ordonnanceur(session, lambda: PARIS, declencher=declencher, maintenant=horloge)
-
-
-async def poser(session, horloge, **champs) -> dict:
-    async with session() as s:
-        a = await alarmes.creer(s, alarmes.valider(alarme(**champs)), horloge())
-        await s.commit()
-    return a
-
-
-async def relire(session, ident) -> dict | None:
-    async with session() as s:
-        return await alarmes.lire(s, ident)
-
-
-def a_paris(texte: str) -> datetime:
-    return datetime.fromisoformat(texte).replace(tzinfo=PARIS).astimezone(UTC)
-
-
 async def test_part_a_l_heure_une_seule_fois(table):
     # Jeudi 5 novembre 2026, 22:00 : on arme l'alarme de semaine de 07:00.
     horloge, appels = Horloge(a_paris("2026-11-05T22:00")), []
@@ -324,14 +260,6 @@ async def test_l_accroche_qui_echoue_est_notee(table):
 
 
 # ── en temps réel, par le plugin activé ─────────────────────────────────
-
-
-def dans(secondes: float) -> str:
-    return (datetime.now(PARIS) + timedelta(seconds=secondes)).strftime("%H:%M:%S")
-
-
-async def lire_alarme(client, ident) -> dict:
-    return next(a for a in (await client.get(f"{RACINE}/alarmes", headers=AUTH)).json()["alarmes"] if a["id"] == ident)
 
 
 async def test_une_ecriture_reveille_l_ordonnanceur(reveil):

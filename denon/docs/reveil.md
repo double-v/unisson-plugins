@@ -34,7 +34,7 @@ Table `plugin_denon.alarmes` (migration du plugin, dans son schéma) :
 | `contexte_id` | int ou null | |
 | `melange` | bool | playlist seulement : ordre ou mélange |
 | `genre_id`, `format`, `favoris` | | filtres, contexte `bibliotheque` seulement |
-| `volume_depart_db`, `volume_cible_db` | float | -80 à 18 |
+| `volume_depart_db`, `volume_cible_db` | float (`DOUBLE PRECISION`) | -80 à 18 |
 | `montee_s` | int | 0 à 3600 (1 h au plus) ; 0 = volume cible d'emblée |
 | `fin_mode` | str | `duree`, `pistes`, `sans_limite` |
 | `fin_valeur` | int ou null | minutes, ou nombre de pistes |
@@ -42,7 +42,8 @@ Table `plugin_denon.alarmes` (migration du plugin, dans son schéma) :
 | `derniere_execution` | str ISO | le départ réel ; moins l'échéance, le retard |
 | `dernier_resultat` | str | code (`joue`, `ampli_injoignable`, `adresse_reseau_non_reglee`…) |
 | `test` | bool | alarme du testeur de fuseau, supprimée après son passage (ajout du lot 3) |
-| `cree_le`, `modifie_le` | str ISO | `modifie_le` arme l'alarme : seule compte une occurrence qui le suit |
+| `cree_le`, `modifie_le` | str ISO | |
+| `arme_le` | str ISO | créée, ou modifiée dans son heure, ses jours ou son activation : seule compte une occurrence qui le suit (ajout du lot 3) |
 
 Une alarme à `jours = 0` se désactive après son passage.
 

@@ -26,6 +26,7 @@ from zoneinfo import ZoneInfo
 from . import alarmes
 
 SOMMEIL_MAX_S = 30
+REPRISE_S = 1  # après un passage en échec, on réessaie vite : une alarme attend
 _TESTS_GARDES = 20
 
 Declencher = Callable[[dict], Awaitable[str | None]]
@@ -69,17 +70,21 @@ class Ordonnanceur:
         self._evenement.set()
 
     async def tourner(self) -> None:
+        nettoye = False
         while True:
             self._evenement.clear()
             try:
+                if not nettoye:
+                    await self.nettoyer()
+                    nettoye = True
                 prochaine = await self.passer()
             except asyncio.CancelledError:
                 raise
             except Exception:
-                # Base indisponible, fuseau mal réglé : on réessaie plus
-                # tard, sans mettre le plugin en panne (le lien doit vivre).
+                # Base indisponible : on réessaie dans une seconde, sans
+                # mettre le plugin en panne (le lien doit vivre).
                 self.journal.exception("ordonnanceur du réveil : passage en échec")
-                prochaine = None
+                prochaine = self.maintenant() + timedelta(seconds=REPRISE_S)
             attente = SOMMEIL_MAX_S
             if prochaine is not None:
                 attente = min(max((prochaine - self.maintenant()).total_seconds(), 0), SOMMEIL_MAX_S)
@@ -87,6 +92,15 @@ class Ordonnanceur:
                 await asyncio.wait_for(self._evenement.wait(), attente)
             except TimeoutError:
                 pass
+
+    async def nettoyer(self) -> None:
+        """Au démarrage : les alarmes de test passées qu'un arrêt a laissées
+        entre leur départ et leur suppression."""
+        async with self.session() as s:
+            n = await alarmes.supprimer_tests_finis(s)
+            await s.commit()
+        if n:
+            self.journal.info("réveil : %d alarme(s) de test passée(s) supprimée(s)", n)
 
     async def passer(self) -> datetime | None:
         """Fait partir ce qui est dû, note ce qui est manqué ; rend la
@@ -112,7 +126,7 @@ class Ordonnanceur:
     async def _partir(self, alarme: dict, occ: datetime) -> None:
         depart = self.maintenant()
         async with self.session() as s:
-            prise = await alarmes.prendre(s, alarme["id"], occ, execution=depart, resultat="en_cours")
+            prise = await alarmes.prendre(s, alarme["id"], occ, lu=alarme["arme_le"], execution=depart, resultat="en_cours")
             await s.commit()
         if prise is None:
             return  # un autre passage l'a déjà fait partir
@@ -123,16 +137,17 @@ class Ordonnanceur:
             resultat = await self.declencher(prise) or "declenchee"
         except Exception as e:
             self.journal.exception("alarme %s : l'accroche a échoué", alarme["id"])
-            resultat = f"erreur:{type(e).__name__}"[:40]
+            resultat = f"erreur:{type(e).__name__}"
+        resultat = str(resultat)[: alarmes.RESULTAT_MAX]
         prise["dernier_resultat"] = resultat
         async with self.session() as s:
             await alarmes.noter_resultat(s, prise["id"], resultat)
             await s.commit()
-        await self._fin_de_test(prise, "partie")
+        await self._fin_de_test(prise)
 
     async def _manquer(self, alarme: dict, occ: datetime, maintenant: datetime) -> None:
         async with self.session() as s:
-            prise = await alarmes.prendre(s, alarme["id"], occ, execution=None, resultat="manquee")
+            prise = await alarmes.prendre(s, alarme["id"], occ, lu=alarme["arme_le"], execution=None, resultat="manquee")
             await s.commit()
         if prise is None:
             return
@@ -140,24 +155,30 @@ class Ordonnanceur:
             "alarme %s « %s » manquée : échéance %s, plus de %d min de retard",
             alarme["id"], alarme["nom"], alarmes.iso(occ), alarmes.RATTRAPAGE.seconds // 60,
         )
-        await self._fin_de_test(prise, "manquee")
+        await self._fin_de_test(prise)
 
-    async def _fin_de_test(self, alarme: dict, etat: str) -> None:
+    def _resume(self, alarme: dict) -> dict:
+        """Le résultat d'une alarme de test prise : partie (son départ et son
+        retard) ou manquée."""
+        fz = self.fuseau()
+        retard = alarmes.retard_ms(alarme)
+        partie = retard is not None
+        return {
+            "id": alarme["id"],
+            "nom": alarme["nom"],
+            "etat": "partie" if partie else "manquee",
+            "echeance": alarmes.local(alarmes.lire_iso(alarme["derniere_echeance"]), fz),
+            "depart": alarmes.local(alarmes.lire_iso(alarme["derniere_execution"]), fz) if partie else None,
+            "retard_ms": retard,
+            "dernier_resultat": alarme["dernier_resultat"],
+        }
+
+    async def _fin_de_test(self, alarme: dict) -> None:
         """L'alarme de test se supprime après son passage ; son résultat
         reste lisible (`resultat_test`)."""
         if not alarme["test"]:
             return
-        fz = self.fuseau()
-        partie = etat == "partie"
-        self.tests[alarme["id"]] = {
-            "id": alarme["id"],
-            "nom": alarme["nom"],
-            "etat": etat,
-            "echeance": alarmes.local(alarmes.lire_iso(alarme["derniere_echeance"]), fz),
-            "depart": alarmes.local(alarmes.lire_iso(alarme["derniere_execution"]), fz) if partie else None,
-            "retard_ms": alarmes.retard_ms(alarme) if partie else None,
-            "dernier_resultat": alarme["dernier_resultat"],
-        }
+        self.tests[alarme["id"]] = self._resume(alarme)
         while len(self.tests) > _TESTS_GARDES:
             self.tests.popitem(last=False)
         async with self.session() as s:
@@ -171,6 +192,9 @@ class Ordonnanceur:
             alarme = await alarmes.lire(s, ident)
         if alarme is None or not alarme["test"]:
             return None
+        if not alarme["active"]:
+            # Prise mais pas encore supprimée (unisson arrêté entre les deux).
+            return self._resume(alarme)
         fz = self.fuseau()
         _, occ = alarmes.occurrence(alarme, fz, self.maintenant())
         return {"id": ident, "nom": alarme["nom"], "etat": "en_attente", "echeance": alarmes.local(occ, fz),

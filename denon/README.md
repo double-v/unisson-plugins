@@ -46,7 +46,6 @@ ordonnanceur ; la lecture UPnP (la séance) viendra au lot 4.
   réveil) : lit la description du lecteur, ses formats (`GetProtocolInfo`),
   pilote AVTransport et compose le DIDL-Lite d'une piste. Rien de propre à
   Denon ; testé contre un faux lecteur HTTP nourri de réponses de l'AVR-X4000.
-
 - **Les alarmes du réveil** (0.2.0, `backend/alarmes.py`), dans la table
   `plugin_denon.alarmes` (migration du plugin). Une heure locale (`HH:MM` ou
   `HH:MM:SS`, dans le réglage `fuseau`), un masque de jours (lundi = 1 …
@@ -63,7 +62,11 @@ ordonnanceur ; la lecture UPnP (la séance) viendra au lot 4.
   redémarrage. **Rattrapage** : jusqu'à 10 min de retard (unisson
   redémarrait), l'alarme part ; au-delà, elle est `manquee`. Une alarme
   créée ou modifiée après son heure attend la prochaine, sans rattrapage.
-  Une alarme unique se désactive après son passage. Dans ce lot, le
+  Une alarme unique se désactive après son passage. Seul un changement
+  d'heure, de jours ou d'activation réarme une alarme : un renommage à 07:00:01
+  ne fait pas sauter celle de 07:00. Un passage en échec (base
+  indisponible) est réessayé une seconde plus tard ; au démarrage, les
+  alarmes de test passées qu'un arrêt a laissées sont supprimées. Dans ce lot, le
   déclenchement est journalisé (`dernier_resultat = "declenchee"`) ; la
   séance viendra au lot 4.
 - **Les routes du réveil**, sous `/api/plugins/denon/reveil/`, avec le même
@@ -77,13 +80,18 @@ ordonnanceur ; la lecture UPnP (la séance) viendra au lot 4.
   | DELETE | `/alarmes/{id}` | | 204 ; 404 |
   | POST | `/tester` | `{dans_s: 5 \| 10, alarme_id?}` | 201 `{alarme, horloge, echeance, echeance_utc}` |
   | GET | `/tester/{id}` | | `{etat: en_attente \| partie \| manquee, echeance, depart, retard_ms, dernier_resultat}` |
-  | GET | `/horloge` | | `{fuseau, local, decalage, utc}` |
+  | GET | `/horloge` | | `{fuseau, local, decalage, utc, avertissement}` |
+
+  Un identifiant (chemin, `contexte_id`, `genre_id`, `alarme_id`) au-delà
+  de 2³¹−1 est refusé en 422.
 
   Le **testeur de fuseau** crée une alarme unique à maintenant + 5 ou 10 s
   (arrondi à la seconde suivante, nom « Test 07:42:15 »), passée par le vrai
   ordonnanceur. Elle reprend le contexte et les volumes de l'alarme choisie
   (par défaut la première ; sans alarme : un tirage de la bibliothèque à
-  -50 dB), et finit toujours après une piste. Elle se supprime après son
+  -50 dB), et finit toujours après une piste. Pendant l'heure en double du
+  retour à l'heure d'hiver, une échéance que l'heure locale ne désigne pas
+  est refusée (422). Elle se supprime après son
   passage ; son résultat reste lisible par `GET /tester/{id}` (en mémoire,
   les 20 derniers, perdus au redémarrage).
 
@@ -97,7 +105,7 @@ ordonnanceur ; la lecture UPnP (la séance) viendra au lot 4.
 | `pilote` | `avrx4000` | un pilote inconnu refuse l'activation, avec son motif |
 | `jeton` (secret) | vide | vide : routes ouvertes, comme `denon-api` |
 | `port_ecoute` | 0 | lu à l'activation : le changer demande de réactiver |
-| `fuseau` | `Europe/Paris` | nom IANA : l'heure des alarmes est une heure locale ; un fuseau inconnu refuse l'activation |
+| `fuseau` | `Europe/Paris` | nom IANA : l'heure des alarmes est une heure locale ; un fuseau inconnu refuse l'activation. Réglé invalide à chaud, le réveil garde le dernier bon fuseau, le journalise une fois et le dit dans `avertissement` (`/horloge`, `/alarmes`) |
 
 `denon_host` et `denon_telnet_port`, que le cœur recopie depuis
 `DEDUP_DENON_*` (spec 023, US3), sont repris dans `hote` et `port_telnet`.

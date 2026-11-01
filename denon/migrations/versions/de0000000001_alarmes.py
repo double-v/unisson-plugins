@@ -9,7 +9,12 @@ Hors conception :
   C'est elle qui empêche un double départ, et `derniere_execution` moins
   elle donne le retard du départ ;
 - `test` : l'alarme créée par le testeur de fuseau, supprimée après son
-  passage.
+  passage ;
+- `arme_le` : le moment où l'alarme a été armée (créée, ou modifiée dans son
+  heure, ses jours ou son activation). Seule compte une occurrence qui le
+  suit ; un renommage ne le change pas.
+
+Les volumes sont en `DOUBLE PRECISION` : en `REAL`, -35.3 revenait -35.2999….
 
 Pas de clé étrangère vers `playlists`, `artists` ou `albums` : une alarme
 dont le contexte disparaît ne doit pas disparaître avec lui, elle le dira
@@ -44,8 +49,8 @@ def upgrade() -> None:
             genre_id INTEGER,
             format VARCHAR(10),
             favoris BOOLEAN NOT NULL DEFAULT FALSE,
-            volume_depart_db REAL NOT NULL,
-            volume_cible_db REAL NOT NULL,
+            volume_depart_db DOUBLE PRECISION NOT NULL,
+            volume_cible_db DOUBLE PRECISION NOT NULL,
             montee_s INTEGER NOT NULL DEFAULT 0,
             fin_mode VARCHAR(20) NOT NULL,
             fin_valeur INTEGER,
@@ -54,7 +59,8 @@ def upgrade() -> None:
             derniere_execution VARCHAR,
             dernier_resultat VARCHAR(40),
             cree_le VARCHAR NOT NULL,
-            modifie_le VARCHAR NOT NULL
+            modifie_le VARCHAR NOT NULL,
+            arme_le VARCHAR NOT NULL
         )
         """
     )

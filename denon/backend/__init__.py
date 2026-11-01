@@ -33,11 +33,10 @@ def enregistrer(ctx: Contexte) -> None:
             cadence_s=max(ctx.reglage("cadence_ms"), 0) / 1000,
         )
 
-    # Relu à chaque usage, comme les autres réglages ; vérifié à l'activation.
-    def fuseau():
-        return alarmes.fuseau(ctx.reglage("fuseau"))
-
-    fuseau()
+    # Vérifié à l'activation (un fuseau inconnu la refuse), puis relu à chaque
+    # usage ; un réglage invalide posé à chaud garde le dernier bon fuseau.
+    fuseau = alarmes.FuseauRegle(lambda: ctx.reglage("fuseau"), ctx.journal)
+    fuseau.valide = alarmes.fuseau(ctx.reglage("fuseau"))
 
     lien = Lien(config, pilote, journal=ctx.journal)
     ctx.routeur(routes.fabriquer(lien, lambda: ctx.secret("jeton")))
