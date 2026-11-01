@@ -63,14 +63,14 @@ async def test_essayer_suivre_puis_arreter(client, faux_ampli, dmr, denon_instal
     assert vue["piste"]["titre"].startswith("Piste ") and vue["piste"]["artiste"] == "Test Artist"
     assert vue["piste"]["album"] == "Album One" and vue["piste"]["pochette"] is None
     assert vue["volume"] == -42 and vue["fin_mode"] == "sans_limite" and vue["fin_prevue"] is None
-    assert faux_ampli.commandes[4:6] == ["PWON", "MV380"]
+    assert faux_ampli.commandes[4:6] == ["ZMON", "MV380"]
     assert not [c for c in faux_ampli.commandes if c.startswith("SI") and c != "SI?"]  # R0 : pas de SINET
 
     r = await client.post(f"{RACINE}/seance/arreter", headers=AUTH)
     assert r.status_code == 200
     corps = r.json()
     assert corps["arretee"] is True and corps["seance"] is None and corps["derniere"]["resultat"] == "arretee"
-    assert dmr.actions()[-1] == "Stop" and "PWSTANDBY" not in faux_ampli.commandes
+    assert dmr.actions()[-1] == "Stop" and "ZMOFF" not in faux_ampli.commandes
     assert (await lire_alarme(client, a["id"]))["dernier_resultat"] == "arretee"
     # Plus rien à arrêter.
     assert (await client.post(f"{RACINE}/seance/arreter", headers=AUTH)).json()["arretee"] is False
@@ -129,7 +129,7 @@ async def test_le_testeur_de_cinq_secondes_joue_une_piste(client, faux_ampli, dm
         assert chrono.monotonic() - debut < 15, res
         await asyncio.sleep(0.1)
     assert res["etat"] == "partie"
-    assert len(dmr.jouees) == 1 and faux_ampli.commandes[-1] == "PWSTANDBY"
+    assert len(dmr.jouees) == 1 and faux_ampli.commandes[-1] == "ZMOFF"
 
 
 async def test_desactiver_pendant_une_seance_arrete_puis_ne_laisse_rien(client, faux_ampli, dmr, denon_installe, adresse, pistes):
@@ -146,5 +146,5 @@ async def test_desactiver_pendant_une_seance_arrete_puis_ne_laisse_rien(client, 
     await attendre(lambda: faux_ampli.fermetures == 1 and dmr.ouvertes == 0, delai=10)
     # De son mieux avant de fermer : Stop, puis la veille par le lien encore vivant.
     assert dmr.actions()[-1] == "Stop"
-    assert faux_ampli.commandes[-1] == "PWSTANDBY"
+    assert faux_ampli.commandes[-1] == "ZMOFF"
     assert (await client.get(f"{RACINE}/seance", headers=AUTH)).status_code == 404

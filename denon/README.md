@@ -81,7 +81,8 @@ réveil, unisson#1070).
      séance), les pistes (`pistes_playlist`, mélangée si demandé, ou
      `tirer_pistes`) et le flux de la première. Si l'une manque, l'ampli
      n'est pas réveillé et le résultat le dit.
-  2. *Allumer* : `PWON`, le volume de départ (la cible si `montee_s = 0`), et
+  2. *Allumer* : `ZMON` (la zone principale seule depuis la 0.4.2 ; `PWON`
+     réveillait aussi les zones 2 et 3), le volume de départ (la cible si `montee_s = 0`), et
      la source réseau du pilote s'il en a une (aucune sur l'AVR-X4000 depuis
      la 0.4.1 : `SINET` y coupe la lecture DLNA, R0 du 2026-11-01). On prend
      la main quelle que soit la source.
@@ -100,8 +101,8 @@ réveil, unisson#1070).
   6. *Monter le volume* par pas de 0,5 dB sur `montee_s`. Elle s'arrête si
      l'ampli pousse un volume qui n'est pas l'un de nos pas, ou qui
      redescend sous le plus haut écho déjà vu : quelqu'un y a touché.
-  7. *Finir* : `duree` → `Stop` puis `PWSTANDBY` à l'échéance ; `pistes` →
-     `fin_valeur` pistes puis `PWSTANDBY` ; `sans_limite` → des lots de 50
+  7. *Finir* : `duree` → `Stop` puis `ZMOFF` à l'échéance ; `pistes` →
+     `fin_valeur` pistes puis `ZMOFF` ; `sans_limite` → des lots de 50
      rechargés, jamais de veille (`duree` recharge aussi). **Reprise de la
      main** (autre source, `Stop` ou `Pause` venus d'ailleurs, autre média,
      mise en veille) : la séance s'arrête, sans mise en veille. Un
@@ -110,11 +111,11 @@ réveil, unisson#1070).
      durée connue, un `STOPPED` alors que `RelTime` avançait est un `Stop`
      d'ailleurs. Juste après un changement de piste, un `STOPPED` est ignoré
      4 s ; au repli, une piste qui ne démarre pas est sautée.
-  8. *Fin anormale* après `PWON` (`lecture_impossible`, erreur) : `Stop`
-     puis `PWSTANDBY`. En `duree`, UPnP perdu n'arrête pas la séance : la
+  8. *Fin anormale* après `ZMON` (`lecture_impossible`, erreur) : `Stop`
+     puis `ZMOFF`. En `duree`, UPnP perdu n'arrête pas la séance : la
      veille part par telnet à l'échéance ; en `pistes`, la veille part tout
      de suite ; en `sans_limite`, pas de veille. **Désactiver le plugin**, ou
-     **redémarrer unisson**, en pleine séance : `Stop`, puis `PWSTANDBY` si
+     **redémarrer unisson**, en pleine séance : `Stop`, puis `ZMOFF` si
      le lien répond encore, avant de fermer. Le cœur (correctif #1068,
      présent dans le 0.6 que le plugin demande) laisse 10 s en tout aux
      tâches des plugins à l'arrêt ; la séance tient sous 8 s au pire
@@ -204,7 +205,7 @@ réveil, unisson#1070).
 | `jeton` (secret) | vide | l'API de denon-api (`/api/*`, ici et sur l'écoute à part) ; vide : routes ouvertes, comme `denon-api`. Les routes du réveil ne le demandent pas (garde « même origine ») |
 | `port_ecoute` | 0 | lu à l'activation : le changer demande de réactiver |
 | `hote_upnp` | vide | l'hôte UPnP de l'ampli (description `http://<hôte>:8080/description.xml`), ou l'URL complète de sa description ; vide : `hote`. Relu à chaud |
-| `delai_reveil_s` | vide | secondes entre `PWON` et le premier `Play` ; vide : celui du pilote (8 s sur l'AVR-X4000). Relu à chaque séance |
+| `delai_reveil_s` | vide | secondes entre `ZMON` et le premier `Play` ; vide : celui du pilote (8 s sur l'AVR-X4000). Relu à chaque séance |
 | `fuseau` | `Europe/Paris` | nom IANA : l'heure des alarmes est une heure locale ; un fuseau inconnu refuse l'activation. Réglé invalide à chaud, le réveil garde le dernier bon fuseau, le journalise une fois et le dit dans `avertissement` (`/horloge`, `/alarmes`) |
 
 `denon_host` et `denon_telnet_port`, que le cœur recopie depuis
