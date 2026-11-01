@@ -311,10 +311,12 @@ async def test_le_testeur_part_dans_cinq_secondes(reveil):
     assert (await reveil.get(f"{RACINE}/tester/{test['id']}", headers=AUTH)).json()["etat"] == "en_attente"
 
     while (res := (await reveil.get(f"{RACINE}/tester/{test['id']}", headers=AUTH)).json())["etat"] == "en_attente":
-        assert chrono.monotonic() - debut < 8
+        assert chrono.monotonic() - debut < 9
         await asyncio.sleep(0.02)
     ecoule = chrono.monotonic() - debut
-    assert 5 <= ecoule <= 6.5, ecoule
+    # Échéance arrondie à la seconde suivante (5 à 6 s), puis jusqu'à 1 s de
+    # retard toléré : la précision elle-même se juge sur `retard_ms`.
+    assert 5 <= ecoule <= 7.5, ecoule
     assert res["etat"] == "partie" and res["dernier_resultat"] == "declenchee"
     assert res["echeance"] == corps["echeance"]
     assert 0 <= res["retard_ms"] < 1000
