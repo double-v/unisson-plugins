@@ -187,7 +187,7 @@ async def test_le_testeur_pendant_l_heure_en_double(table):
     o = Ordonnanceur(table, lambda: PARIS, maintenant=horloge)
     app = FastAPI()
     fuseau = alarmes.FuseauRegle(lambda: "Europe/Paris", logging.getLogger("test"))
-    app.include_router(routes_reveil.fabriquer(o, table, fuseau, lambda: ""))
+    app.include_router(routes_reveil.fabriquer(o, table, fuseau))
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as c:
         # Premier passage : l'heure locale désigne bien l'échéance.
         r = await c.post("/reveil/tester", json={"dans_s": 5})

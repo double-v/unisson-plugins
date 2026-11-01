@@ -3,7 +3,7 @@ nom = "Denon"
 version = "0.4.0"
 description = "Partage l'ampli Denon (une seule connexion telnet) entre unisson, Hublot et les autres : l'API de denon-api, sans conteneur à part."
 categorie = "officiel"
-coeur = ">=0.5"             # la séance : flux_lecteur, tirer_pistes, marquer_jouee… (0.5) ; cles_heritees (0.4) ; plugin_denon (0.3)
+coeur = ">=0.6"             # meme_origine, la garde des routes du réveil (0.6) ; la séance : flux_lecteur, tirer_pistes, marquer_jouee… (0.5) ; cles_heritees (0.4) ; plugin_denon (0.3)
 actif_par_defaut = false
 
 [front_abi]

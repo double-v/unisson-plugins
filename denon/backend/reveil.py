@@ -1,5 +1,14 @@
-"""Les routes du réveil, sous `/api/plugins/denon/reveil/`, protégées par le
-même jeton que l'API de denon-api (conception : `docs/reveil.md`).
+"""Les routes du réveil, sous `/api/plugins/denon/reveil/`, protégées par la
+garde « même origine » du cœur (≥ 0.6, `meme_origine`), comme les routes
+de gestion des plugins (conception : `docs/reveil.md`).
+
+Pas par le jeton : l'admin, qui sert la page « Réveil », n'envoie pas
+d'en-tête `Authorization`, et un jeton réglé pour Hublot lui fermait ces
+routes (401). Le jeton reste celui de l'API de denon-api (`routes.py`).
+Une écriture venue d'une page d'un autre site, ou servie sous un nom
+d'hôte qu'unisson ne sert pas, reçoit 403 ; une lecture passe, comme
+partout dans l'API du cœur. Les routeurs d'un plugin sont montés à part :
+la garde est posée ici, sur le routeur du réveil.
 
 Les alarmes, le testeur de fuseau et l'horloge (lot 3) ; la séance :
 `essayer`, `seance`, `arreter` et le `diagnostic` (lot 4). Ces routes ne
@@ -15,13 +24,13 @@ from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, Path, Request, Response
 from fastapi.responses import JSONResponse
-from unisson.plugin import AdresseReseauNonReglee
+from unisson.plugin import AdresseReseauNonReglee, meme_origine
 
 from . import alarmes
 from .alarmes import ID_MAX, UTC, FuseauRegle, Invalide
 from .dlna import ErreurDlna
 from .ordonnanceur import Ordonnanceur, echeance_de_test
-from .routes import _Route, corps, garde_du_jeton
+from .routes import _Route, corps
 from .seance import Seances
 
 # L'admin est servie sous `/admin` : le lien du réglage s'y préfixe.
@@ -73,12 +82,11 @@ def fabriquer(
     ordo: Ordonnanceur,
     session: Callable,
     fuseau: FuseauRegle,
-    jeton: Callable[[], str],
     *,
     seances: Seances | None = None,
     adresse_reseau: Callable[[], str] | None = None,
 ) -> APIRouter:
-    router = APIRouter(prefix="/reveil", route_class=_Route, dependencies=[Depends(garde_du_jeton(jeton))])
+    router = APIRouter(prefix="/reveil", route_class=_Route, dependencies=[Depends(meme_origine)])
 
     def vue(alarme: dict) -> dict:
         return alarmes.vue(alarme, fuseau(), ordo.maintenant())

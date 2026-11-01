@@ -147,14 +147,19 @@ dans `dernier_resultat`.
   suivi précédent est un `Stop` venu d'ailleurs ; sinon, une fin de piste.
 - **`arreter`** envoie `Stop` dès qu'un `SetAVTransportURI` est parti, même
   pendant l'attente de `PLAYING`.
-- **Désactivation en pleine séance** (décision de l'opérateur,
-  2026-11-01) : `Stop` UPnP (2 s au plus), puis `PWSTANDBY` par le lien
-  s'il est encore connecté, avant de fermer le lecteur et le lien. Pour que
-  la séance s'arrête avant que le lien ne meure, le lien tourne en tâche
-  fille de la séance (`Seances.tourner(lien.tourner)`). La veille n'est
-  **garantie qu'à la désactivation**. Au **redémarrage** d'unisson, c'est au
-  mieux : le cœur n'attend pas les tâches des plugins à l'arrêt
-  (`arreter_tout`), et `asyncio.run` les annule de nouveau (voir « Suites »).
+- **Désactivation ou arrêt d'unisson en pleine séance** (décision de
+  l'opérateur, 2026-11-01) : `Stop` UPnP, puis `PWSTANDBY` par le lien s'il
+  est encore connecté, avant de fermer le lecteur et le lien. Pour que la
+  séance s'arrête avant que le lien ne meure, le lien tourne en tâche fille
+  de la séance (`Seances.tourner(lien.tourner)`). Au **redémarrage**
+  d'unisson aussi : depuis le correctif #1068 (présent dans le cœur 0.6 que
+  le plugin demande), `arreter_tout` attend les tâches des plugins
+  **10 s en tout**. Le pire cas de l'arrêt de la séance tient donc sous
+  8 s (lot 5) : `Stop` 1,5 s au plus, veille 2 s au plus, dans un budget de
+  6 s qui couvre aussi les écritures en vol, puis 0,5 s pour le lien et
+  0,5 s pour le client HTTP, soit 7 s. Ce qui dépasse est abandonné et
+  journalisé ; un test borne la durée avec un lecteur muet et un lien
+  bouché.
 - **Le lien qui meurt** (une panne, pas une désactivation) coupe la séance
   avec le motif `lien_mort` : `Stop` seul, puis le plugin passe en panne.
 - **Le ménage de fin** (montée, `Stop`, veille) tourne sous bouclier : une
@@ -171,9 +176,8 @@ dans `dernier_resultat`.
 
 ### Suites
 
-- **Le cœur doit attendre les tâches des plugins à l'arrêt** (`arreter_tout`
-  n'attend rien) : sans cela, la veille au redémarrage reste « au mieux ».
-  Traité à part, côté cœur.
+- ~~Le cœur doit attendre les tâches des plugins à l'arrêt~~ : fait par
+  #1068 (10 s en tout), et la séance tient dans ce délai (lot 5).
 - **La suite des `MV` reçus** est relevée par un écouteur du lien
   (`Lien.ecouter`) pendant la montée, plutôt qu'un instantané de
   `etat["volume"]` : une baisse d'un cran recouverte par l'écho du pas
@@ -198,7 +202,15 @@ réponse et le diagnostic montrent côte à côte :
 Le résultat (parti à l'heure prévue, avec quel retard) s'affiche sur la
 ligne de l'alarme de test, qui se supprime toute seule après son passage.
 
-## Les routes (sous `/api/plugins/denon/`, protégées par le jeton)
+## Les routes (sous `/api/plugins/denon/`, protégées par la garde « même origine »)
+
+Depuis le lot 5 (cœur 0.6, unisson#1070, décision de l'opérateur) : la
+garde `meme_origine` du cœur, posée sur le routeur du réveil, et non plus
+le jeton. L'admin, qui sert la page, n'envoie pas d'`Authorization` : un
+jeton réglé pour Hublot lui fermait ces routes (401). Une écriture venue
+d'une page d'un autre site, ou d'un hôte qu'unisson ne sert pas, reçoit
+403. Le jeton reste celui de l'API de denon-api (`/healthz`, `/api/*`), y
+compris sur l'écoute à part.
 
 | Méthode | Route | Rôle |
 |---|---|---|

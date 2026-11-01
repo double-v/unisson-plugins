@@ -7,9 +7,10 @@ qu'il remplace : plus de conteneur à part. Plugin **officiel** d'unisson,
 du #343 (spec 023 du cœur). Le réveil s'y ajoute (conception :
 [`docs/reveil.md`](docs/reveil.md)) : depuis la 0.2.0, les alarmes et leur
 ordonnanceur ; depuis la 0.3.0, la séance qui allume l'ampli et lui fait
-jouer la musique d'unisson par UPnP. Il demande le cœur **0.5** (flux pour
-lecteurs réseau, spec 023). Depuis la 0.4.0, ses écrans : la page
-« Réveil » de l'admin, dans Extensions.
+jouer la musique d'unisson par UPnP. Depuis la 0.4.0, ses écrans : la page
+« Réveil » de l'admin, dans Extensions. Il demande le cœur **0.6** (flux
+pour lecteurs réseau, spec 023 ; garde « même origine » des routes du
+réveil, unisson#1070).
 
 ## Ce qu'il apporte
 
@@ -108,10 +109,13 @@ lecteurs réseau, spec 023). Depuis la 0.4.0, ses écrans : la page
   8. *Fin anormale* après `PWON` (`lecture_impossible`, erreur) : `Stop`
      puis `PWSTANDBY`. En `duree`, UPnP perdu n'arrête pas la séance : la
      veille part par telnet à l'échéance ; en `pistes`, la veille part tout
-     de suite ; en `sans_limite`, pas de veille. **Désactiver le plugin** en pleine
-     séance : `Stop`, puis `PWSTANDBY` si le lien répond encore, avant de
-     fermer. Au **redémarrage** d'unisson, c'est au mieux (le cœur n'attend
-     pas encore les tâches des plugins à l'arrêt).
+     de suite ; en `sans_limite`, pas de veille. **Désactiver le plugin**, ou
+     **redémarrer unisson**, en pleine séance : `Stop`, puis `PWSTANDBY` si
+     le lien répond encore, avant de fermer. Le cœur (correctif #1068,
+     présent dans le 0.6 que le plugin demande) laisse 10 s en tout aux
+     tâches des plugins à l'arrêt ; la séance tient sous 8 s au pire
+     (`Stop` 1,5 s, veille 2 s, budget de 6 s avec les écritures en vol,
+     puis 0,5 s pour le lien et 0,5 s pour le client HTTP).
 
   Le résultat va dans `dernier_resultat` : `en_cours`, puis `joue`,
   `reprise_en_main`, `arretee`, `remplacee`, `pistes_epuisees`,
@@ -119,8 +123,13 @@ lecteurs réseau, spec 023). Depuis la 0.4.0, ses écrans : la page
   `adresse_reseau_non_reglee`, `ampli_injoignable`, `aucune_piste`,
   `aucun_format_commun`, `fichier_absent`, `contexte_inconnu`. Chaque étape
   est journalisée (`unisson.plugin.denon`).
-- **Les routes du réveil**, sous `/api/plugins/denon/reveil/`, avec le même
-  jeton (pas sur l'écoute à part) :
+- **Les routes du réveil**, sous `/api/plugins/denon/reveil/` (pas sur
+  l'écoute à part), protégées par la garde « même origine » du cœur
+  (`meme_origine`, cœur 0.6), et **non par le jeton** : l'admin, qui sert la
+  page « Réveil », n'envoie pas d'`Authorization`. Une écriture venue d'une
+  page d'un autre site, ou d'un hôte qu'unisson ne sert pas
+  (`DEDUP_ALLOWED_HOSTS`), reçoit 403. Le jeton reste celui de l'API de
+  denon-api :
 
   | Méthode | Route | Corps | Réponse |
   |---|---|---|---|
@@ -168,10 +177,9 @@ lecteurs réseau, spec 023). Depuis la 0.4.0, ses écrans : la page
     60 s dans la liste, et dans la carte « L'heure » jusqu'au test suivant),
     les conseils ; une pastille sur l'onglet quand quelque chose ne va pas.
 
-  **Limite : le jeton.** L'admin n'envoie pas d'en-tête `Authorization` :
-  si `jeton` est réglé, les routes du réveil lui répondent 401, et la page
-  le dit. Laisser le jeton vide pour se servir de la page (voir la PR du
-  lot 5 pour la correction proposée).
+  Un `jeton` réglé (pour Hublot) ne gêne pas la page : les routes du
+  réveil suivent la garde « même origine ». Ouverte sous un nom d'hôte
+  qu'unisson ne sert pas, la page reçoit 403 et le dit.
 
   Les sources sont dans `front/admin-src/` (SFC, primitives `@ds`, sans
   `<style>`), compilées dans `front/admin/index.js`, qui est versionné :
@@ -189,7 +197,7 @@ lecteurs réseau, spec 023). Depuis la 0.4.0, ses écrans : la page
 | `port_telnet` | 23 | |
 | `cadence_ms` | 900 | délai entre deux commandes |
 | `pilote` | `avrx4000` | un pilote inconnu refuse l'activation, avec son motif |
-| `jeton` (secret) | vide | vide : routes ouvertes, comme `denon-api` |
+| `jeton` (secret) | vide | l'API de denon-api (`/api/*`, ici et sur l'écoute à part) ; vide : routes ouvertes, comme `denon-api`. Les routes du réveil ne le demandent pas (garde « même origine ») |
 | `port_ecoute` | 0 | lu à l'activation : le changer demande de réactiver |
 | `hote_upnp` | vide | l'hôte UPnP de l'ampli (description `http://<hôte>:8080/description.xml`), ou l'URL complète de sa description ; vide : `hote`. Relu à chaud |
 | `delai_reveil_s` | vide | secondes entre `PWON` et le premier `Play` ; vide : celui du pilote (8 s sur l'AVR-X4000). Relu à chaque séance |
