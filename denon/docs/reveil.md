@@ -31,7 +31,7 @@ Table `plugin_denon.alarmes` (migration du plugin, dans son schéma) :
 | `heure` | str `HH:MM` | heure locale (réglage `fuseau`) |
 | `jours` | int | masque : lundi = 1, mardi = 2, … dimanche = 64 ; 0 = une seule fois |
 | `contexte` | str | `playlist`, `bibliotheque`, `artiste`, `album` |
-| `contexte_id` | int ou null | |
+| `contexte_id` | int ou null | playlist : un id ≥ 1, ou -1 « Albums favoris » / -2 « Pistes favorites » (dynamiques, cœur 0.7, 0.4.1) |
 | `melange` | bool | playlist seulement : ordre ou mélange |
 | `genre_id`, `format`, `favoris` | | filtres, contexte `bibliotheque` seulement |
 | `volume_depart_db`, `volume_cible_db` | float (`DOUBLE PRECISION`) | -80 à 18 |

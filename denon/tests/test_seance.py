@@ -153,6 +153,29 @@ def url_de(adresse: str, piste: int) -> str:
     return f"{adresse}/api/flux/{piste}/original.flac"
 
 
+def _coeur_07() -> bool:
+    from unisson.plugin import VERSION_COEUR
+
+    return tuple(int(x) for x in VERSION_COEUR.split(".")[:2]) >= (0, 7)
+
+
+@pytest.mark.skipif("not _coeur_07()",
+                    reason="playlists dynamiques -1/-2 dans ctx.pistes_playlist : cœur 0.7 (unisson#1077) attendu")
+async def test_la_playlist_des_pistes_favorites_passe_par_la_facade(banc, adresse, pistes, db_session):
+    b = await banc()
+    favorites = [pistes[2], pistes[0]]
+    for t in favorites:
+        await db_session.execute(text("INSERT INTO favorites (track_id, created_at) VALUES (:t, 'x')"), {"t": t})
+    await db_session.commit()
+    a, code = await b.lancer(contexte="playlist", contexte_id=alarmes.PLAYLIST_PISTES_FAVORITES,
+                             fin_mode="pistes", fin_valeur=5, montee_s=0)
+    assert code == "en_cours"
+    assert await b.fin() == "joue"
+    # Rien que les favorites, chacune une fois (l'ordre est celui du cœur).
+    assert sorted(b.dmr.jouees) == sorted(url_de(adresse, t) for t in favorites)
+    assert await comptes(db_session) == {p: int(p in favorites) for p in pistes}
+
+
 # ── les trois modes de fin ──────────────────────────────────────────────
 
 

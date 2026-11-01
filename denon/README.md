@@ -53,8 +53,9 @@ réveil, unisson#1070).
 - **Les alarmes du réveil** (0.2.0, `backend/alarmes.py`), dans la table
   `plugin_denon.alarmes` (migration du plugin). Une heure locale (`HH:MM` ou
   `HH:MM:SS`, dans le réglage `fuseau`), un masque de jours (lundi = 1 …
-  dimanche = 64 ; 0 = une seule fois), ce qui se joue (`playlist`,
-  `bibliotheque` avec ses filtres genre, format, favoris, `artiste`,
+  dimanche = 64 ; 0 = une seule fois), ce qui se joue (`playlist`, y compris
+  depuis la 0.4.1 les playlists dynamiques -1 « Albums favoris » et -2
+  « Pistes favorites », cœur 0.7 ou plus, `bibliotheque` avec ses filtres genre, format, favoris, `artiste`,
   `album`), les volumes de départ et cible (-80 à 18 dB) et la montée (1 h au plus), la
   fin (`duree` en minutes, `pistes`, `sans_limite`). Changement d'heure :
   une heure qui n'existe pas (02:30 au passage à l'heure d'été) part une

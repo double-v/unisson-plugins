@@ -29,6 +29,11 @@ FINS = ("duree", "pistes", "sans_limite")
 # Jusqu'à 10 minutes de retard (unisson redémarre), l'alarme part ; au-delà,
 # elle est `manquee` et ne part pas.
 RATTRAPAGE = timedelta(minutes=10)
+# Les playlists dynamiques du cœur (`GET /api/playlists`) : calculées, sans
+# ligne dans `playlists`. La façade les lit depuis le cœur 0.7 (unisson#1077).
+PLAYLIST_ALBUMS_FAVORIS = -1
+PLAYLIST_PISTES_FAVORITES = -2
+PLAYLISTS_DYNAMIQUES = (PLAYLIST_ALBUMS_FAVORIS, PLAYLIST_PISTES_FAVORITES)
 # Plus loin en arrière, tout est manqué : inutile de dérouler les jours.
 _HORIZON = timedelta(days=8)
 
@@ -255,6 +260,10 @@ def valider(donnees: dict, avant: dict | None = None) -> dict:
     elif contexte == "bibliotheque":
         if v["contexte_id"] is not None:
             refus("contexte_id", "sans objet pour un tirage dans la bibliothèque")
+    elif contexte == "playlist" and _entier(v["contexte_id"]) and v["contexte_id"] <= 0:
+        if v["contexte_id"] not in PLAYLISTS_DYNAMIQUES:
+            refus("contexte_id", "playlist inconnue : un identifiant de playlist (1 ou plus), "
+                  f"ou {PLAYLIST_ALBUMS_FAVORIS} (Albums favoris) ou {PLAYLIST_PISTES_FAVORITES} (Pistes favorites)")
     elif not identifiant(v["contexte_id"]):
         refus("contexte_id", f"identifiant obligatoire pour le contexte « {contexte} »")
 
@@ -302,14 +311,15 @@ def valider(donnees: dict, avant: dict | None = None) -> dict:
 async def verifier_references(session, v: dict) -> None:
     """La playlist, l'artiste, l'album ou le genre visés existent (tables du
     cœur, lues sans leurs modèles). Un artiste ou un album à la corbeille ne
-    compte pas."""
+    compte pas. Une playlist dynamique (favoris) existe toujours."""
     requetes = {
         "playlist": "SELECT 1 FROM playlists WHERE id = :id",
         "artiste": "SELECT 1 FROM artists WHERE id = :id AND trashed = 0",
         "album": "SELECT 1 FROM albums WHERE id = :id AND trashed = 0",
     }
     erreurs = []
-    if v["contexte"] in requetes:
+    dynamique = v["contexte"] == "playlist" and v["contexte_id"] in PLAYLISTS_DYNAMIQUES
+    if v["contexte"] in requetes and not dynamique:
         if (await session.execute(text(requetes[v["contexte"]]), {"id": v["contexte_id"]})).first() is None:
             erreurs.append({"champ": "contexte_id", "message": f"{v['contexte']} {v['contexte_id']} introuvable"})
     if v["genre_id"] is not None:
