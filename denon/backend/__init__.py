@@ -1,0 +1,39 @@
+"""Denon — plugin officiel (spec 023 d'unisson, #343).
+
+Premier lot : le **multiplexeur** qui remplace le conteneur `denon-api`.
+Une connexion telnet unique vers l'ampli, partagée par unisson, Hublot et
+les autres, derrière la même API HTTP que `denon-api` :
+
+- sous `/api/plugins/denon/` (`http://<unisson>/api/plugins/denon/api/state`) ;
+- et, si `port_ecoute` est réglé, seule sur ce port, à l'adresse exacte de
+  l'ancien conteneur (`http://<nas>:8100/api/state`).
+
+Le réveil (alarmes, lecture UPnP) viendra sur ce lien, dans un lot suivant.
+"""
+
+from unisson.plugin import Contexte
+
+from . import ecoute, routes
+from .lien import Config, Lien
+from .pilotes import PILOTES
+
+
+def enregistrer(ctx: Contexte) -> None:
+    pilote = PILOTES.get(ctx.reglage("pilote"))
+    if pilote is None:
+        raise ValueError(f"pilote Denon inconnu : {ctx.reglage('pilote')!r} (connus : {', '.join(PILOTES)})")
+
+    def config() -> Config:
+        return Config(
+            hote=ctx.reglage("hote").strip(),
+            port=ctx.reglage("port_telnet") or pilote.port_defaut,
+            cadence_s=max(ctx.reglage("cadence_ms"), 0) / 1000,
+        )
+
+    lien = Lien(config, pilote, journal=ctx.journal)
+    ctx.routeur(routes.fabriquer(lien, lambda: ctx.secret("jeton")))
+    ctx.tache(lien.tourner)
+    # Le port est lu à l'activation : le changer demande de réactiver le plugin.
+    if port := ctx.reglage("port_ecoute"):
+        seul = routes.fabriquer(lien, lambda: ctx.secret("jeton"))
+        ctx.tache(lambda: ecoute.servir(seul, port, ctx.journal))
