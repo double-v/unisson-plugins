@@ -1,0 +1,43 @@
+id = "denon"
+nom = "Denon"
+version = "0.1.0"
+description = "Partage l'ampli Denon (une seule connexion telnet) entre unisson, Hublot et les autres : l'API de denon-api, sans conteneur à part."
+categorie = "officiel"
+coeur = ">=0.4"
+actif_par_defaut = false
+
+[apporte]
+routes = true
+
+[[reglages]]
+cle = "hote"
+type = "str"                # IP de l'ampli ; vide : le lien attend
+
+[[reglages]]
+cle = "port_telnet"
+type = "int"
+defaut = 23
+
+[[reglages]]
+cle = "cadence_ms"
+type = "int"
+defaut = 900                # un AVR perd des commandes plus rapprochées
+
+[[reglages]]
+cle = "pilote"
+type = "str"
+defaut = "avrx4000"
+
+[[reglages]]
+cle = "jeton"
+type = "str"
+secret = true               # vide : routes ouvertes, comme denon-api
+
+[[reglages]]
+cle = "port_ecoute"
+type = "int"
+defaut = 0                  # 8100 : l'adresse de denon-api, pour Hublot ; 0 : pas d'écoute à part
+
+[cles_heritees]
+denon_host = "hote"
+denon_telnet_port = "port_telnet"
