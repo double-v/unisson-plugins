@@ -26,6 +26,9 @@ _publier_facade()
 
 
 _ECHO = re.compile(r"PWON|PWSTANDBY|MV\d{2,3}|SI[A-Z0-9]+")
+# La zone principale : sortie de veille, l'AVR pousse `PWON` puis `ZMON` ;
+# éteinte sans autre zone en route, `ZMOFF` puis `PWSTANDBY`.
+_ECHO_ZONE = {"ZMON": "PWON\rZMON", "ZMOFF": "ZMOFF\rPWSTANDBY"}
 
 
 class FauxAmpli:
@@ -56,7 +59,11 @@ class FauxAmpli:
                 self.recues += [(time.monotonic(), l) for l in lignes]
                 if self.echo:
                     for l in lignes:
-                        if _ECHO.fullmatch(l) and l not in self.sans_echo:
+                        if l in self.sans_echo:
+                            continue
+                        if l in _ECHO_ZONE:
+                            ecrivain.write(f"{_ECHO_ZONE[l]}\r".encode())
+                        elif _ECHO.fullmatch(l):
                             ecrivain.write(f"{l}\r".encode())
         except ConnectionError:
             pass

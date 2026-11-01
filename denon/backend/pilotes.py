@@ -79,6 +79,14 @@ class Avrx4000:
     def alimentation(self, allume: bool) -> str:
         return "PWON" if allume else "PWSTANDBY"
 
+    def zone_principale(self, allume: bool) -> str:
+        """Le réveil n'allume que la zone principale : `PWON` réveillerait
+        aussi les zones 2 et 3, et `PWSTANDBY` couperait une zone 2 déjà en
+        route. Sortie de veille, l'ampli pousse `PWON` puis `ZMON` ; `ZMOFF`
+        le remet en veille (il pousse `PWSTANDBY`) si aucune autre zone ne
+        joue."""
+        return "ZMON" if allume else "ZMOFF"
+
     def sourdine(self, muet: bool) -> str:
         return "MUON" if muet else "MUOFF"
 

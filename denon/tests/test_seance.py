@@ -191,7 +191,7 @@ async def test_fin_apres_deux_pistes_par_setnext_puis_veille(banc, adresse, pist
     # Allumer, volume (cible d'emblée : pas de montée) ; puis volume renvoyé
     # après la sortie de veille ; veille à la fin. Aucune source : R0 du
     # 2026-11-01, SINET coupe la lecture DLNA de l'AVR-X4000.
-    assert b.telnet() == ["PWON", "MV400", "MV400", "PWSTANDBY"]
+    assert b.telnet() == ["ZMON", "MV400", "MV400", "ZMOFF"]
     # Une seule mise en place : la seconde piste enchaîne par SetNext.
     assert b.dmr.uris("SetAVTransportURI") == [url_de(adresse, pistes[0])]
     assert b.dmr.uris("SetNextAVTransportURI") == [url_de(adresse, pistes[1])]
@@ -212,7 +212,7 @@ async def test_fin_a_la_duree_stop_puis_veille(banc, adresse, pistes):
     assert vue["fin_mode"] == "duree" and vue["fin_prevue"] is not None
     assert await b.fin() == "joue"
     assert b.dmr.actions()[-1] == "Stop"
-    assert b.telnet()[-1] == "PWSTANDBY"
+    assert b.telnet()[-1] == "ZMOFF"
     # 4 s de musique : au moins deux pistes de 3 s ont commencé.
     assert len(b.dmr.jouees) >= 2
 
@@ -227,7 +227,7 @@ async def test_sans_limite_recharge_et_ne_se_met_jamais_en_veille(banc, adresse,
     assert b.seances.en_cours
     assert await b.seances.arreter() is True
     assert await b.fin() == "arretee"
-    assert "PWSTANDBY" not in b.telnet()
+    assert "ZMOFF" not in b.telnet()
     assert b.dmr.actions()[-1] == "Stop"  # arrêter coupe la musique, pas l'ampli
     assert (await comptes(db_session))[pistes[0]] == 2
 
@@ -308,7 +308,7 @@ async def test_repli_par_set_av_transport_uri(banc, adresse, pistes, db_session,
     assert b.dmr.jouees == [url_de(adresse, p) for p in pistes[:3]]
     assert b.seances.derniere["enchainement"] == "repli"
     assert await comptes(db_session) == {**{p: 1 for p in pistes[:3]}, **{p: 0 for p in pistes[3:]}}
-    assert b.telnet()[-1] == "PWSTANDBY"
+    assert b.telnet()[-1] == "ZMOFF"
 
 
 async def test_un_stopped_juste_apres_l_enchainement_n_est_pas_une_reprise(banc, adresse, pistes, db_session):
@@ -318,7 +318,7 @@ async def test_un_stopped_juste_apres_l_enchainement_n_est_pas_une_reprise(banc,
     await b.lancer(contexte="playlist", contexte_id=pl, fin_mode="pistes", fin_valeur=2, montee_s=0)
     assert await b.fin() == "joue"
     assert b.dmr.jouees == [url_de(adresse, p) for p in pistes[:2]]
-    assert b.telnet()[-1] == "PWSTANDBY"
+    assert b.telnet()[-1] == "ZMOFF"
 
 
 async def test_au_repli_une_piste_qui_ne_demarre_pas_est_sautee(banc, adresse, pistes, db_session):
@@ -343,7 +343,7 @@ async def test_un_reltime_a_zero_juste_avant_la_fin_n_est_pas_une_reprise(banc, 
     await attendre(lambda: b.dmr.etat == "PLAYING" and b.dmr.temps() >= 2.2, delai=15)
     b.dmr.reltime_zero = 10_000
     assert await b.fin() == "joue"
-    assert b.telnet()[-1] == "PWSTANDBY"
+    assert b.telnet()[-1] == "ZMOFF"
 
 
 async def test_play_reessaye_pendant_la_sortie_de_veille(banc, adresse, pistes):
@@ -363,7 +363,7 @@ async def test_play_toujours_refuse(banc, adresse, pistes):
     assert (await relire(b.session, a["id"]))["dernier_resultat"] == "lecture_impossible"
     # L'ampli allumé pour rien est rendu à la veille.
     assert b.dmr.actions()[-1] == "Stop"
-    assert b.telnet()[-1] == "PWSTANDBY"
+    assert b.telnet()[-1] == "ZMOFF"
 
 
 async def test_une_erreur_apres_l_allumage_remet_l_ampli_en_veille(banc, adresse, pistes):
@@ -372,7 +372,7 @@ async def test_une_erreur_apres_l_allumage_remet_l_ampli_en_veille(banc, adresse
     a["volume_cible_db"] = "fort"  # une alarme que rien ne valide plus : erreur à l'envoi du volume
     assert await b.seances.lancer(a) == "en_cours"
     assert await b.fin() == "erreur:TypeError"
-    assert b.telnet() == ["PWON", "PWSTANDBY"]
+    assert b.telnet() == ["ZMON", "ZMOFF"]
     assert "Stop" not in b.dmr.actions()  # aucune piste posée
 
 
@@ -385,7 +385,7 @@ async def test_duree_upnp_perdu_veille_par_telnet_a_l_echeance(banc, adresse, lo
     await asyncio.sleep(0.6)
     assert b.seances.en_cours  # la séance sonde encore
     assert await b.fin() == "ampli_injoignable"
-    assert b.telnet()[-1] == "PWSTANDBY"
+    assert b.telnet()[-1] == "ZMOFF"
 
 
 @pytest.mark.parametrize("mode, veille", [("pistes", True), ("sans_limite", False)])
@@ -397,8 +397,8 @@ async def test_upnp_perdu_en_pistes_veille_en_sans_limite_non(banc, adresse, lon
     await attendre(lambda: b.seances.courante is not None and b.seances.courante.etat == "lecture", delai=10)
     await b.dmr.arreter()  # l'ampli ne répond plus en UPnP
     assert await b.fin() == "ampli_injoignable"
-    assert (b.telnet()[-1] == "PWSTANDBY") is veille
-    assert ("PWSTANDBY" in b.telnet()) is veille
+    assert (b.telnet()[-1] == "ZMOFF") is veille
+    assert ("ZMOFF" in b.telnet()) is veille
 
 
 async def test_la_base_qui_tombe_a_la_recharge_ne_coupe_pas_la_piste(banc, adresse, pistes, db_session):
@@ -417,7 +417,7 @@ async def test_la_base_qui_tombe_a_la_recharge_ne_coupe_pas_la_piste(banc, adres
         assert await b.fin() == "joue"  # la piste a joué, puis plus rien : veille
     finally:
         db_module.async_session = avant
-    assert len(b.dmr.jouees) == 1 and b.telnet()[-1] == "PWSTANDBY"
+    assert len(b.dmr.jouees) == 1 and b.telnet()[-1] == "ZMOFF"
 
 
 async def test_arreter_pendant_l_attente_de_playing(banc, adresse, pistes):
@@ -428,7 +428,7 @@ async def test_arreter_pendant_l_attente_de_playing(banc, adresse, pistes):
     assert await b.seances.arreter() is True
     assert await b.fin() == "arretee"
     assert b.dmr.actions()[-1] == "Stop"
-    assert "PWSTANDBY" not in b.telnet()
+    assert "ZMOFF" not in b.telnet()
 
 
 async def test_une_piste_sans_fichier_est_sautee(banc, adresse, pistes, db_session, music_root):
@@ -522,7 +522,7 @@ async def test_un_stopped_peu_apres_playing_est_une_lecture_refusee(banc, adress
     assert await b.fin() == "joue"  # pas une reprise de la main : la suivante est jouée
     assert b.dmr.jouees == [url_de(adresse, pistes[0]), url_de(adresse, pistes[1])]
     assert [(s["piste"], s["code"]) for s in b.seances.derniere["sautees"]] == [(pistes[0], "lecture_refusee")]
-    assert b.telnet()[-1] == "PWSTANDBY"
+    assert b.telnet()[-1] == "ZMOFF"
 
 
 async def test_trois_lectures_refusees_de_suite_finissent_en_lecture_impossible(banc, adresse, pistes, db_session):
@@ -533,7 +533,7 @@ async def test_trois_lectures_refusees_de_suite_finissent_en_lecture_impossible(
     assert await b.fin() == "lecture_impossible"
     assert b.dmr.jouees == [url_de(adresse, p) for p in pistes[:3]]  # la quatrième ne part pas
     assert [s["code"] for s in b.seances.derniere["sautees"]] == ["lecture_refusee"] * 3
-    assert b.telnet()[-1] == "PWSTANDBY"  # l'ampli allumé pour rien retourne en veille
+    assert b.telnet()[-1] == "ZMOFF"  # l'ampli allumé pour rien retourne en veille
     assert (await relire(b.session, a["id"]))["dernier_resultat"] == "lecture_impossible"
 
 
@@ -560,7 +560,7 @@ async def test_reprise_de_la_main_sans_mise_en_veille(banc, adresse, longues, db
     else:
         await b.ampli.pousser("PWSTANDBY\r")
     assert await b.fin() == "reprise_en_main"
-    assert "PWSTANDBY" not in b.telnet()
+    assert "ZMOFF" not in b.telnet()
     assert (await relire(b.session, a["id"]))["dernier_resultat"] == "reprise_en_main"
 
 
@@ -608,7 +608,7 @@ async def test_l_ordonnanceur_lance_la_seance(banc, adresse, pistes):
     assert b.ordo.tests[a["id"]]["dernier_resultat"] == "en_cours"
     assert await b.fin() == "joue"
     assert b.ordo.tests[a["id"]]["dernier_resultat"] == "joue"
-    assert len(b.dmr.jouees) == 1 and b.telnet()[0] == "PWON"
+    assert len(b.dmr.jouees) == 1 and b.telnet()[0] == "ZMON"
 
 
 async def test_l_ordonnanceur_note_un_echec_de_preparation(banc, pistes):
@@ -637,7 +637,7 @@ async def test_la_fin_du_superviseur_arrete_la_seance_et_ferme_tout(banc, adress
     assert (await relire(b.session, a["id"]))["dernier_resultat"] == "plugin_desactive"
     # De son mieux : Stop, puis la veille par le lien encore connecté.
     assert b.dmr.actions()[-1] == "Stop"
-    assert b.telnet()[-1] == "PWSTANDBY"
+    assert b.telnet()[-1] == "ZMOFF"
     await attendre(lambda: b.dmr.ouvertes == 0)
     assert not [t for t in asyncio.all_tasks() if t.get_name().startswith("denon:seance")]
     await attendre(lambda: not b.seances.en_vol, delai=5)  # rien d'écrit après le test
@@ -667,7 +667,7 @@ async def test_l_arret_d_unisson_tient_sous_8_s_meme_si_rien_ne_repond(banc, adr
     # Les deux gestes ont été tentés, chacun dans sa borne (1,5 s + 2 s).
     assert duree >= 3.0, duree
     assert "Stop" in [r.action for r in b.dmr.soaps]
-    assert "PWSTANDBY" not in b.telnet()
+    assert "ZMOFF" not in b.telnet()
     assert not b.seances.en_cours
 
 

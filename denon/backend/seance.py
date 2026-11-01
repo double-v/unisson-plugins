@@ -7,7 +7,7 @@ une alarme qui part pendant une séance la remplace.
    le lien telnet, les formats du lecteur (`GetProtocolInfo`, une fois par
    séance), les pistes, et le flux de la première. Si l'une manque, l'ampli
    n'est pas réveillé pour rien : le résultat le dit.
-2. **Allumer** : `PWON`, le volume de départ, la source réseau du pilote.
+2. **Allumer** : `ZMON` (la zone principale seule), le volume de départ, la source réseau du pilote.
    On prend la main quelle que soit la source.
 3. **Attendre** le délai de sortie de veille (`GetTransportInfo` répond
    déjà en veille et ne prouve rien), renvoyer volume et source (une
@@ -22,7 +22,7 @@ une alarme qui part pendant une séance la remplace.
    flux est impossible est sautée et journalisée.
 6. **Monter le volume** par pas de 0,5 dB, sur `montee_s`. La montée
    s'arrête si l'ampli pousse un volume que nous n'avons pas envoyé.
-7. **Finir** : `duree` → `Stop` puis `PWSTANDBY` ; `pistes` → `PWSTANDBY`
+7. **Finir** : `duree` → `Stop` puis `ZMOFF` ; `pistes` → `ZMOFF`
    après la dernière ; `sans_limite` → jamais seul. Quelqu'un qui reprend la
    main (autre source, `Stop` ou `Pause` venus d'ailleurs, autre média,
    mise en veille) arrête la séance, sans mise en veille.
@@ -184,7 +184,7 @@ class Seance:
         self._refus_suite = 0  # lectures refusées d'affilée
         self._upnp_perdu = False
         self._prochaine_en_echec = False
-        self.allume = False  # PWON est parti : une fin anormale remet l'ampli en veille
+        self.allume = False  # ZMON est parti : une fin anormale remet l'ampli en veille
         self.uri_posee = False  # un SetAVTransportURI est parti : arrêter envoie Stop
 
     @property
@@ -373,7 +373,7 @@ class Seance:
     async def _apres_annulation(self, motif: str) -> None:
         """`arretee` : la musique s'arrête, l'ampli reste allumé.
         `plugin_desactive` (désactivation, redémarrage) : de son mieux,
-        `Stop` puis `PWSTANDBY` si le lien répond encore. `remplacee` : rien,
+        `Stop` puis `ZMOFF` si le lien répond encore. `remplacee` : rien,
         la séance suivante prend la main."""
         if motif in ("arretee", "lien_mort"):
             await self._stop()
@@ -388,7 +388,7 @@ class Seance:
         self.etat = "reveil"
         depart = a["volume_cible_db"] if a["montee_s"] == 0 else a["volume_depart_db"]
         try:
-            await self.lien.envoyer(p.alimentation(True))
+            await self.lien.envoyer(p.zone_principale(True))
             self.allume = True
             await self._volume(depart)
             if p.source_reseau:
@@ -650,7 +650,7 @@ class Seance:
     async def _veille(self, delai: float | None = None) -> None:
         try:
             async with asyncio.timeout(delai or self.cadence.arret_s):
-                await self.lien.envoyer(self.pilote.alimentation(False))
+                await self.lien.envoyer(self.pilote.zone_principale(False))
         except (Injoignable, TimeoutError) as e:
             self._log(logging.WARNING, "mise en veille impossible : %r", e)
 

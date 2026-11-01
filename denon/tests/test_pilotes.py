@@ -48,3 +48,9 @@ def test_gestes():
 @pytest.mark.parametrize("commande, valide", [("PWON", True), ("MV?", True), ("SI SAT/CBL", False), ("pwon", False), ("", False), ("A" * 33, False), ("PW\rON", False), (None, False)])
 def test_validation(commande, valide):
     assert P.valider(commande) is valide
+
+
+def test_le_reveil_ne_touche_que_la_zone_principale():
+    # PWON réveillerait aussi les zones 2 et 3 ; PWSTANDBY couperait une
+    # zone 2 qui jouait déjà.
+    assert (P.zone_principale(True), P.zone_principale(False)) == ("ZMON", "ZMOFF")

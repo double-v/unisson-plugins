@@ -68,7 +68,9 @@ pas.
 Une seule séance à la fois. Une alarme qui part pendant une séance la
 remplace.
 
-1. **Allumer** : `PWON` par le lien, puis le volume de départ (`MV`), puis la
+1. **Allumer** : `ZMON` par le lien (la zone principale seule, 0.4.2 :
+   `PWON` réveillait aussi les zones 2 et 3, et `PWSTANDBY` coupait une
+   zone 2 qui jouait), puis le volume de départ (`MV`), puis la
    source réseau du pilote s'il en a une. L'AVR-X4000 n'en a pas (R0 du
    2026-11-01 : il bascule seul, et `SINET` coupe la lecture DLNA). On prend
    la main quelle que soit la source.
@@ -94,8 +96,8 @@ remplace.
    si quelqu'un touche au volume** : l'état poussé par l'ampli diffère alors
    du dernier pas envoyé.
 8. **Finir** :
-   - `duree` : à l'échéance, `Stop` puis `PWSTANDBY` ;
-   - `pistes` : après la dernière, `PWSTANDBY` ;
+   - `duree` : à l'échéance, `Stop` puis `ZMOFF` ;
+   - `pistes` : après la dernière, `ZMOFF` ;
    - `sans_limite` : jamais tout seul.
 
    **Quelqu'un reprend la main** pendant la séance (autre source, `Stop` ou
@@ -107,7 +109,7 @@ dans `dernier_resultat`.
 ### Ce que le lot 4 a tranché là où la conception était muette
 
 - **Préparer avant d'allumer** : l'adresse réseau, le lien telnet, les
-  formats, les pistes et le flux de la première se vérifient avant `PWON`.
+  formats, les pistes et le flux de la première se vérifient avant `ZMON`.
   Une alarme qui ne peut pas jouer ne réveille pas l'ampli (ni la maison).
 - **Volume et source renvoyés** après `delai_reveil_s` : un `MV` ou un `SI`
   envoyé pendant la sortie de veille a pu se perdre (à vérifier en R0).
@@ -121,7 +123,7 @@ dans `dernier_resultat`.
   piste ; une durée inconnue aussi.
 - **Reprise de la main** élargie : un autre média dans `TrackURI`, et une
   mise en veille (`PWSTANDBY` poussé), arrêtent aussi la séance.
-- **`arreter`** envoie `Stop` (la musique s'arrête), jamais `PWSTANDBY`.
+- **`arreter`** envoie `Stop` (la musique s'arrête), jamais `ZMOFF`.
 - **Le résultat** : la séance l'écrit elle-même à la fin ; l'accroche de
   l'ordonnanceur rend None pour ne pas écraser un résultat déjà écrit, et
   le résumé d'une alarme de test le reprend (`resultat_tardif`).
@@ -130,12 +132,12 @@ dans `dernier_resultat`.
 
 ### Après relecture (PR #11)
 
-- **Fin anormale après `PWON`** (`lecture_impossible`, `erreur:*`) : `Stop`
-  si une piste a été posée, puis `PWSTANDBY`. Une reprise de la main, elle,
+- **Fin anormale après `ZMON`** (`lecture_impossible`, `erreur:*`) : `Stop`
+  si une piste a été posée, puis `ZMOFF`. Une reprise de la main, elle,
   ne met jamais en veille.
-- **`duree` sans UPnP** : la séance sonde encore ; à l'échéance, `PWSTANDBY`
+- **`duree` sans UPnP** : la séance sonde encore ; à l'échéance, `ZMOFF`
   part par telnet si le lien répond (résultat `ampli_injoignable`). En
-  `pistes`, UPnP perdu finit comme une fin normale : `PWSTANDBY` par telnet
+  `pistes`, UPnP perdu finit comme une fin normale : `ZMOFF` par telnet
   si le lien répond (résultat `ampli_injoignable`). En `sans_limite`, UPnP
   perdu finit la séance **sans** veille : ce mode ne met jamais l'ampli en
   veille de lui-même.
@@ -148,7 +150,7 @@ dans `dernier_resultat`.
 - **`arreter`** envoie `Stop` dès qu'un `SetAVTransportURI` est parti, même
   pendant l'attente de `PLAYING`.
 - **Désactivation ou arrêt d'unisson en pleine séance** (décision de
-  l'opérateur, 2026-11-01) : `Stop` UPnP, puis `PWSTANDBY` par le lien s'il
+  l'opérateur, 2026-11-01) : `Stop` UPnP, puis `ZMOFF` par le lien s'il
   est encore connecté, avant de fermer le lecteur et le lien. Pour que la
   séance s'arrête avant que le lien ne meure, le lien tourne en tâche fille
   de la séance (`Seances.tourner(lien.tourner)`). Au **redémarrage**
