@@ -150,6 +150,10 @@ class Seance:
         self.montee = "sans"  # en_cours, finie, interrompue
         self._envoyes: list[float] = []  # les volumes envoyés, tels que l'ampli les rendra
         self._echo_vu = False
+        self._sens = 1  # posé par la montée : +1 si elle monte, -1 si elle descend
+        self._echo_max: float | None = None  # le plus haut écho vu, dans le sens de la montée
+        self._recus: deque[float] = deque()  # les volumes poussés par l'ampli pendant la montée, dans l'ordre
+        self._touche = False
         self._source_vue = False
         self._allume_vu = False
         self._tache_montee: asyncio.Task | None = None
@@ -285,7 +289,7 @@ class Seance:
     async def derouler(self) -> str:
         """La séance entière ; rend le code du résultat, sans jamais lever
         (une annulation porte son motif : `motif_arret`)."""
-        anormale = False
+        anormale, annulee = False, False
         try:
             code = await self._derouler()
         except Echec as e:
@@ -294,23 +298,41 @@ class Seance:
         except asyncio.CancelledError:
             if (tache := asyncio.current_task()) is not None:
                 tache.uncancel()
-            code = self.motif_arret or "interrompue"
+            code, annulee = self.motif_arret or "interrompue", True
             self._log(logging.INFO, "arrêtée (%s)", code)
-            await self._arreter_montee()
-            await self._apres_annulation(code)
         except Exception as e:
             self._log(logging.ERROR, "erreur inattendue : %r", e)
             self.journal.exception("séance de l'alarme %s", self.ident)
             code, anormale = f"erreur:{type(e).__name__}", True
-        await self._arreter_montee()
-        if anormale and self.allume:
-            # L'ampli a été allumé pour rien : on le rend à la veille.
-            await self._stop()
-            await self._veille()
+        await self._menage_protege(code, anormale=anormale, annulee=annulee)
         self.etat = "finie"
         self.resultat = code[: alarmes.RESULTAT_MAX]
         self._log(logging.INFO, "finie : %s (%d piste(s) jouée(s))", self.resultat, self.jouees)
         return self.resultat
+
+    async def _menage_protege(self, code: str, *, anormale: bool, annulee: bool) -> None:
+        """Le ménage de fin (montée, Stop, veille) tourne dans une tâche sous
+        bouclier : une seconde annulation (« Arrêter » puis désactiver, un
+        redémarrage) ne l'interrompt pas, et la séance pose quand même son
+        état et son résultat. La tâche, suivie dans `en_vol`, finit seule."""
+        menage = _en_vol(self.en_vol, self._menage(code, anormale=anormale, annulee=annulee))
+        while not menage.done():
+            try:
+                await asyncio.shield(menage)
+            except asyncio.CancelledError:
+                if (tache := asyncio.current_task()) is not None:
+                    tache.uncancel()
+                self._log(logging.INFO, "annulée encore pendant le ménage : il se poursuit à part")
+                return
+
+    async def _menage(self, code: str, *, anormale: bool, annulee: bool) -> None:
+        await self._arreter_montee()
+        if annulee:
+            await self._apres_annulation(code)
+        elif anormale and self.allume:
+            # L'ampli a été allumé pour rien : on le rend à la veille.
+            await self._stop()
+            await self._veille()
 
     async def _arreter_montee(self) -> None:
         if self._tache_montee is not None:
@@ -333,7 +355,7 @@ class Seance:
         `plugin_desactive` (désactivation, redémarrage) : de son mieux,
         `Stop` puis `PWSTANDBY` si le lien répond encore. `remplacee` : rien,
         la séance suivante prend la main."""
-        if motif == "arretee":
+        if motif in ("arretee", "lien_mort"):
             await self._stop()
         elif motif == "plugin_desactive":
             await self._stop(min(self.cadence.arret_s, 2.0))
@@ -581,7 +603,19 @@ class Seance:
         depart, cible, duree = a["volume_depart_db"], a["volume_cible_db"], a["montee_s"]
         ecart = abs(cible - depart)
         n = max(1, math.ceil(ecart / c.pas_db - 1e-9))
-        sens = 1 if cible > depart else -1
+        sens = self._sens = 1 if cible > depart else -1
+        retirer = self.lien.ecouter(self._trame)
+        try:
+            await self._monter_pas(depart, cible, duree, ecart, n, sens)
+        finally:
+            retirer()
+
+    def _trame(self, ligne: str) -> None:
+        if ligne.startswith("MV") and (v := lire_volume(ligne[2:])) is not None:
+            self._recus.append(v)
+
+    async def _monter_pas(self, depart, cible, duree, ecart, n, sens) -> None:
+        c = self.cadence
         t0 = time.monotonic()
         fait = 0
         while fait < n:
@@ -601,18 +635,27 @@ class Seance:
         self.montee = "finie"
 
     def _volume_touche(self) -> bool:
-        """L'ampli a poussé un volume qui n'est ni notre dernier pas ni
-        l'avant-dernier (son écho peut être encore en route). Une baisse à la
-        télécommande repasse par nos pas d'avant : elle compte. On ne juge
-        qu'après avoir vu l'écho d'un de nos pas : avant, l'état peut garder
-        le volume d'avant la séance."""
-        v = self.lien.etat["volume"]
-        if v is None:
-            return False
-        if any(abs(v - e) < 0.05 for e in self._envoyes[-2:]):
+        """Les échos de nos pas arrivent dans l'ordre (envoi un par un, TCP) :
+        en montée, le volume poussé ne fait que monter, jusqu'au dernier pas
+        envoyé. Un volume qui n'est pas l'un de nos pas, ou qui redescend
+        sous le plus haut écho déjà vu, est un geste étranger (une baisse
+        d'un cran compte). Un écho manquant (un MV perdu pendant la sortie
+        de veille) ne gêne pas. On ne juge qu'après un premier écho : avant,
+        l'état peut garder le volume d'avant la séance."""
+        # Chaque volume poussé depuis le dernier pas, dans l'ordre (le lien
+        # les relève) : un instantané manquerait une baisse vite recouverte.
+        while self._recus and not self._touche:
+            v = self._recus.popleft()
+            if not any(abs(v - e) < 0.05 for e in self._envoyes):
+                self._touche = self._echo_vu
+                continue
+            x = self._sens * v
+            if self._echo_max is not None and x < self._echo_max - 0.05:
+                self._touche = True
+                continue
+            self._echo_max = x if self._echo_max is None else max(self._echo_max, x)
             self._echo_vu = True
-            return False
-        return self._echo_vu
+        return self._touche
 
     # ── la vue ──────────────────────────────────────────────────────────
 
@@ -755,6 +798,19 @@ class Seances:
         await asyncio.wait({tache}, timeout=2 * self.cadence.arret_s)
         return True
 
+    async def _attendre_en_vol(self) -> None:
+        """Attend les appels en base et les ménages en cours, y compris ceux
+        qui naissent pendant l'attente, sous une borne globale ; journalise
+        ceux qu'on abandonne."""
+        fin = time.monotonic() + self.cadence.arret_s
+        while self.en_vol:
+            reste = fin - time.monotonic()
+            if reste <= 0:
+                noms = sorted(getattr(t.get_coro(), "__qualname__", "?") for t in self.en_vol if isinstance(t, asyncio.Task))
+                self.journal.warning("réveil : %d appel(s) abandonné(s) à l'arrêt : %s", len(self.en_vol), ", ".join(noms))
+                return
+            await asyncio.wait(set(self.en_vol), timeout=reste)
+
     def vue(self) -> dict:
         fz = self.fuseau()
         return {
@@ -768,11 +824,13 @@ class Seances:
         ne meure, pour pouvoir encore mettre l'ampli en veille. Rien ne reste
         derrière (séance, écritures, lien, client HTTP)."""
         enfant = asyncio.create_task(lien(), name="denon:lien") if lien else None
+        motif = "plugin_desactive"
         try:
             if enfant is not None:
                 # `wait`, pas `await enfant` : annuler ce superviseur
                 # annulerait sinon le lien tout de suite.
                 await asyncio.wait({enfant})
+                motif = "lien_mort"
                 enfant.result()  # le lien ne meurt jamais seul : une panne remonte
             else:
                 await asyncio.Event().wait()
@@ -782,11 +840,10 @@ class Seances:
                 tache = self._tache
                 if tache is not None and not tache.done():
                     if self.courante is not None:
-                        self.courante.motif_arret = "plugin_desactive"
+                        self.courante.motif_arret = motif
                     tache.cancel()
                     await asyncio.wait({tache}, timeout=2 * self.cadence.arret_s)
-                if self.en_vol:
-                    await asyncio.wait(set(self.en_vol), timeout=self.cadence.arret_s)
+                await self._attendre_en_vol()
             finally:
                 if enfant is not None:
                     enfant.cancel()

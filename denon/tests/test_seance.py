@@ -240,6 +240,32 @@ async def test_une_baisse_pendant_la_montee_l_arrete(banc, adresse, longues, db_
     assert b.seances.vue()["seance"]["volume"] == -60
 
 
+async def test_une_baisse_d_un_cran_pendant_la_montee_l_arrete(banc, adresse, longues, db_session):
+    b = await banc()
+    pl = await playlist(db_session, longues[:1])
+    await b.lancer(contexte="playlist", contexte_id=pl, fin_mode="sans_limite", fin_valeur=None,
+                   volume_depart_db=-60, volume_cible_db=-40, montee_s=8)
+    await attendre(lambda: len(volumes(b)) >= 6 and b.lien.etat["volume"] == volumes(b)[-1], delai=15)
+    dernier = volumes(b)[-1]
+    await b.ampli.pousser(f"{PILOTES['avrx4000'].volume(dernier - 0.5)}\r")  # un cran plus bas : notre avant-dernier pas
+    await attendre(lambda: b.seances.courante.montee == "interrompue", delai=10)
+    envoyes = len(volumes(b))
+    await asyncio.sleep(0.8)
+    assert len(volumes(b)) == envoyes
+
+
+async def test_des_echos_perdus_n_arretent_pas_la_montee(banc, adresse, longues, db_session):
+    b = await banc()
+    b.ampli.sans_echo = {"MV305", "MV310"}  # deux pas de suite sans écho
+    pl = await playlist(db_session, longues[:1])
+    await b.lancer(contexte="playlist", contexte_id=pl, fin_mode="sans_limite", fin_valeur=None,
+                   volume_depart_db=-50, volume_cible_db=-47, montee_s=2)
+    await attendre(lambda: b.seances.courante is not None
+                   and b.seances.courante.montee in ("finie", "interrompue"), delai=15)
+    assert b.seances.courante.montee == "finie"
+    assert volumes(b)[-1] == -47
+
+
 # ── l'enchaînement et le repli ──────────────────────────────────────────
 
 
@@ -576,3 +602,90 @@ async def test_desactive_pendant_un_remplacement_rien_ne_demarre(banc, adresse, 
     await asyncio.gather(b.superviseur, return_exceptions=True)
     assert not [t for t in asyncio.all_tasks() if t.get_name().startswith("denon:seance")]
     await attendre(lambda: not b.seances.en_vol, delai=5)  # rien d'écrit après le test
+
+
+async def test_deux_annulations_de_suite_posent_quand_meme_l_etat_et_le_resultat(banc, adresse, longues, db_session, table):
+    b = await banc()
+    pl = await playlist(db_session, longues[:1])
+    a, _ = await b.lancer(contexte="playlist", contexte_id=pl, fin_mode="sans_limite", fin_valeur=None, montee_s=0)
+    await attendre(lambda: b.seances.courante is not None and b.seances.courante.etat == "lecture", delai=10)
+    seance, tache = b.seances.courante, b.seances._tache
+    b.dmr.attentes["POST"] = 0.6  # le Stop du ménage traîne
+    seance.motif_arret = "arretee"
+    tache.cancel()  # « Arrêter »…
+    await asyncio.sleep(0.2)
+    tache.cancel()  # … puis désactiver, pendant le Stop
+    await asyncio.gather(tache, return_exceptions=True)
+    assert (seance.etat, seance.resultat) == ("finie", "arretee")
+    await attendre(lambda: "Stop" in b.dmr.actions(), delai=5)  # le ménage s'est poursuivi
+    await attendre(lambda: not b.seances.en_vol, delai=10)
+    assert (await relire(table, a["id"]))["dernier_resultat"] == "arretee"
+
+
+async def test_le_lien_qui_meurt_coupe_la_seance_lien_mort_et_met_le_plugin_en_panne(
+        client, table, faux_ampli, dmr, adresse, longues, db_session):
+    """Par la vraie mécanique du cœur : `ctx.tache` et `sur_panne`."""
+    faux_ampli.echo = True
+    casse = []
+
+    def config():
+        if casse:
+            raise RuntimeError("configuration illisible")
+        return Config("127.0.0.1", faux_ampli.port, 0.01)
+
+    ctx = contexte()
+    lien = Lien(config, PILOTES["avrx4000"], attente_min=0.05, attente_max=0.2)
+    lecteur = LecteurDlna(f"{dmr.base}/description.xml", delai=1)
+    seances = Seances(ctx, lien, lecteur, table, fuseau=lambda: PARIS, delai_reveil_s=lambda: 0.05, cadence=CADENCE)
+    pannes = []
+    ctx.sur_panne = pannes.append
+    ctx.tache(lambda: seances.tourner(lien.tourner))
+    ctx.demarrer()
+    try:
+        await attendre(lambda: lien.connecte and lien.en_attente == 0, delai=5)
+        pl = await playlist(db_session, longues[:1])
+        async with table() as s:
+            a = await alarmes.creer(s, alarmes.valider(alarme(contexte="playlist", contexte_id=pl, fin_mode="sans_limite",
+                                                              fin_valeur=None, montee_s=0)), a_paris("2026-11-05T22:00"))
+            await s.commit()
+        assert await seances.lancer(a) == "en_cours"
+        await attendre(lambda: seances.courante is not None and seances.courante.etat == "lecture", delai=10)
+        casse.append(1)
+        await faux_ampli.couper()  # le lien se reconnecte… et sa configuration lève
+        await attendre(lambda: pannes, delai=10)
+        assert "configuration illisible" in pannes[0]
+        assert seances.derniere["resultat"] == "lien_mort"
+        await attendre(lambda: not seances.en_vol, delai=10)
+        assert (await relire(table, a["id"]))["dernier_resultat"] == "lien_mort"
+    finally:
+        ctx.annuler()
+        await asyncio.sleep(0.1)
+
+
+async def test_l_arret_attend_les_appels_nes_pendant_l_attente_et_journalise_les_abandons(banc, caplog):
+    import logging
+
+    from denon.backend.seance import _en_vol
+
+    caplog.set_level(logging.WARNING, logger="unisson.plugin.denon")
+    b = await banc()
+    await asyncio.sleep(0.05)  # le superviseur a démarré
+    fini = []
+
+    async def tardif():
+        await asyncio.sleep(0.3)
+        fini.append("tardif")
+
+    async def premier():
+        await asyncio.sleep(0.2)
+        _en_vol(b.seances.en_vol, tardif())  # naît pendant l'attente de l'arrêt
+
+    async def interminable():
+        await asyncio.sleep(3)
+
+    _en_vol(b.seances.en_vol, premier())
+    _en_vol(b.seances.en_vol, interminable())
+    b.superviseur.cancel()
+    await asyncio.gather(b.superviseur, return_exceptions=True)
+    assert fini == ["tardif"]
+    assert "abandonné" in caplog.text and "interminable" in caplog.text

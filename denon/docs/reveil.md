@@ -145,20 +145,40 @@ dans `dernier_resultat`.
   (`lecture_refusee`).
 - **Durée inconnue** : un `STOPPED` alors que `RelTime` avançait encore au
   suivi précédent est un `Stop` venu d'ailleurs ; sinon, une fin de piste.
-- **La montée** s'arrête si le volume poussé n'est ni notre dernier pas, ni
-  l'avant-dernier (dont l'écho peut être en route) : une baisse à la
-  télécommande repasse par nos pas d'avant.
 - **`arreter`** envoie `Stop` dès qu'un `SetAVTransportURI` est parti, même
   pendant l'attente de `PLAYING`.
-- **Désactivation ou redémarrage en pleine séance** (décision de
-  l'opérateur, 2026-11-01) : on fait de son mieux pour arrêter. `Stop` UPnP
-  (2 s au plus), puis `PWSTANDBY` par le lien s'il est encore connecté,
-  avant de fermer le lecteur et le lien. Pour que la séance s'arrête avant
-  que le lien ne meure, le lien tourne en tâche fille de la séance
-  (`Seances.tourner(lien.tourner)`) ; sans lien vivant, c'est un `Stop` seul.
+- **Désactivation en pleine séance** (décision de l'opérateur,
+  2026-11-01) : `Stop` UPnP (2 s au plus), puis `PWSTANDBY` par le lien
+  s'il est encore connecté, avant de fermer le lecteur et le lien. Pour que
+  la séance s'arrête avant que le lien ne meure, le lien tourne en tâche
+  fille de la séance (`Seances.tourner(lien.tourner)`). La veille n'est
+  **garantie qu'à la désactivation**. Au **redémarrage** d'unisson, c'est au
+  mieux : le cœur n'attend pas les tâches des plugins à l'arrêt
+  (`arreter_tout`), et `asyncio.run` les annule de nouveau (voir « Suites »).
+- **Le lien qui meurt** (une panne, pas une désactivation) coupe la séance
+  avec le motif `lien_mort` : `Stop` seul, puis le plugin passe en panne.
+- **Le ménage de fin** (montée, `Stop`, veille) tourne sous bouclier : une
+  seconde annulation (« Arrêter » puis désactiver) ne l'interrompt pas, et
+  l'état et le résultat de la séance sont posés quand même.
+- **La montée** s'arrête sur une règle de monotonie : les échos de nos pas
+  arrivent dans l'ordre ; un volume qui n'est pas l'un de nos pas, ou qui
+  redescend sous le plus haut écho vu, est un geste étranger (une baisse
+  d'un cran compte, un écho manquant ne gêne pas). Les volumes poussés sont
+  relevés un par un par un écouteur du lien, pas lus en instantané.
 - **Le résultat** s'écrit sous `asyncio.shield` : une annulation tardive ne
   l'empêche pas. Une désactivation pendant un remplacement ne lance pas la
   séance suivante.
+
+### Suites
+
+- **Le cœur doit attendre les tâches des plugins à l'arrêt** (`arreter_tout`
+  n'attend rien) : sans cela, la veille au redémarrage reste « au mieux ».
+  Traité à part, côté cœur.
+- **La suite des `MV` reçus** est relevée par un écouteur du lien
+  (`Lien.ecouter`) pendant la montée, plutôt qu'un instantané de
+  `etat["volume"]` : une baisse d'un cran recouverte par l'écho du pas
+  suivant se voyait mal. Reste à faire : un relevé partagé des trames (pour
+  le diagnostic, et pour toute la séance), si un autre besoin s'en sert.
 
 ## Le testeur de fuseau (demande de l'opérateur)
 

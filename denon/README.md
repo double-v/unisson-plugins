@@ -92,8 +92,8 @@ lecteurs réseau, spec 023). Les écrans viendront au lot 5.
      en attente. Une piste au flux impossible (fichier absent, aucun format
      commun) est sautée et journalisée.
   6. *Monter le volume* par pas de 0,5 dB sur `montee_s`. Elle s'arrête si
-     l'ampli pousse un volume que la séance n'a pas envoyé : quelqu'un y a
-     touché.
+     l'ampli pousse un volume qui n'est pas l'un de nos pas, ou qui
+     redescend sous le plus haut écho déjà vu : quelqu'un y a touché.
   7. *Finir* : `duree` → `Stop` puis `PWSTANDBY` à l'échéance ; `pistes` →
      `fin_valeur` pistes puis `PWSTANDBY` ; `sans_limite` → des lots de 50
      rechargés, jamais de veille (`duree` recharge aussi). **Reprise de la
@@ -107,9 +107,10 @@ lecteurs réseau, spec 023). Les écrans viendront au lot 5.
   8. *Fin anormale* après `PWON` (`lecture_impossible`, erreur) : `Stop`
      puis `PWSTANDBY`. En `duree`, UPnP perdu n'arrête pas la séance : la
      veille part par telnet à l'échéance ; en `pistes`, la veille part tout
-     de suite ; en `sans_limite`, pas de veille. **Désactiver le plugin** (ou
-     redémarrer unisson) en pleine séance : `Stop`, puis `PWSTANDBY` si le
-     lien répond encore, avant de fermer.
+     de suite ; en `sans_limite`, pas de veille. **Désactiver le plugin** en pleine
+     séance : `Stop`, puis `PWSTANDBY` si le lien répond encore, avant de
+     fermer. Au **redémarrage** d'unisson, c'est au mieux (le cœur n'attend
+     pas encore les tâches des plugins à l'arrêt).
 
   Le résultat va dans `dernier_resultat` : `en_cours`, puis `joue`,
   `reprise_en_main`, `arretee`, `remplacee`, `pistes_epuisees`,

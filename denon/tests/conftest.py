@@ -39,6 +39,7 @@ class FauxAmpli:
         # Comme un vrai AVR : il renvoie l'état que change une commande
         # (`MV455` → `MV455`), ce que la séance guette pour la montée du volume.
         self.echo = False
+        self.sans_echo: set[str] = set()  # commandes dont l'écho se perd
 
     async def demarrer(self, port: int = 0):
         self.serveur = await asyncio.start_server(self._client, "127.0.0.1", port)
@@ -55,7 +56,7 @@ class FauxAmpli:
                 self.recues += [(time.monotonic(), l) for l in lignes]
                 if self.echo:
                     for l in lignes:
-                        if _ECHO.fullmatch(l):
+                        if _ECHO.fullmatch(l) and l not in self.sans_echo:
                             ecrivain.write(f"{l}\r".encode())
         except ConnectionError:
             pass

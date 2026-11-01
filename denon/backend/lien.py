@@ -61,6 +61,19 @@ class Lien:
         self._ecrivain: asyncio.StreamWriter | None = None
         self._arrete = False
         self.config = config()
+        self._ecouteurs: list[Callable[[str], None]] = []
+
+    def ecouter(self, ecouteur: Callable[[str], None]) -> Callable[[], None]:
+        """Appelle `ecouteur(trame)` pour chaque trame qui change l'état, dans
+        l'ordre d'arrivée ; rend de quoi se désabonner. Un instantané de
+        `etat` peut manquer un geste entre deux lectures, pas un écouteur."""
+        self._ecouteurs.append(ecouteur)
+
+        def retirer() -> None:
+            if ecouteur in self._ecouteurs:
+                self._ecouteurs.remove(ecouteur)
+
+        return retirer
 
     @property
     def connecte(self) -> bool:
@@ -129,6 +142,11 @@ class Lien:
                 for ligne in lignes:
                     if (ligne := ligne.strip()) and self.pilote.lire(self.etat, ligne):
                         self.etat["updatedAt"] = datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+                        for ecouteur in list(self._ecouteurs):
+                            try:
+                                ecouteur(ligne)
+                            except Exception:  # un écouteur ne coupe pas le lien
+                                self.journal.exception("écouteur du lien")
         except OSError as e:
             self.journal.debug("lien coupé : %s", e)
         finally:
