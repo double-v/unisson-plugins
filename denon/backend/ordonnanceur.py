@@ -8,7 +8,9 @@ Au départ, il note l'occurrence traitée **avant** d'appeler l'accroche
 (`alarmes.prendre`, une écriture conditionnelle) : une alarme ne part
 jamais deux fois, même après un redémarrage ou une réactivation du plugin.
 L'accroche `declencher(alarme)` rend le code qui va dans `dernier_resultat` ;
-elle doit rendre la main vite (la séance du lot 4 tournera à côté).
+elle doit rendre la main vite. Elle peut aussi rendre None : elle écrira le
+résultat elle-même, plus tard (la séance du lot 4, qui tourne à côté), et
+le signale par `resultat_tardif()` pour le résumé des alarmes de test.
 
 L'horloge (`maintenant`) est injectable : les tests appellent `passer()`
 avec une horloge fixée.
@@ -64,6 +66,8 @@ class Ordonnanceur:
         self._evenement = asyncio.Event()
         # Le résultat des alarmes de test, lisible après leur suppression.
         self.tests: OrderedDict[int, dict] = OrderedDict()
+        # Les résultats écrits par l'accroche après son retour (la séance).
+        self._tardifs: OrderedDict[int, str] = OrderedDict()
 
     def reveiller(self) -> None:
         """Une alarme vient d'être écrite : on recalcule tout de suite."""
@@ -134,16 +138,29 @@ class Ordonnanceur:
         if retard > 1:
             self.journal.warning("alarme %s partie avec %.1f s de retard", alarme["id"], retard)
         try:
-            resultat = await self.declencher(prise) or "declenchee"
+            resultat = await self.declencher(prise)
         except Exception as e:
             self.journal.exception("alarme %s : l'accroche a échoué", alarme["id"])
             resultat = f"erreur:{type(e).__name__}"
-        resultat = str(resultat)[: alarmes.RESULTAT_MAX]
-        prise["dernier_resultat"] = resultat
-        async with self.session() as s:
-            await alarmes.noter_resultat(s, prise["id"], resultat)
-            await s.commit()
+        if resultat is not None:
+            resultat = str(resultat)[: alarmes.RESULTAT_MAX]
+            prise["dernier_resultat"] = resultat
+            async with self.session() as s:
+                await alarmes.noter_resultat(s, prise["id"], resultat)
+                await s.commit()
         await self._fin_de_test(prise)
+
+    def resultat_tardif(self, ident: int, resultat: str) -> None:
+        """L'accroche a écrit plus tard le résultat d'une alarme (la séance
+        finie) : le résumé d'une alarme de test le reprend, même si elle est
+        déjà supprimée, ou pas encore."""
+        resultat = resultat[: alarmes.RESULTAT_MAX]
+        self._tardifs[ident] = resultat
+        self._tardifs.move_to_end(ident)
+        while len(self._tardifs) > _TESTS_GARDES:
+            self._tardifs.popitem(last=False)
+        if ident in self.tests:
+            self.tests[ident]["dernier_resultat"] = resultat
 
     async def _manquer(self, alarme: dict, occ: datetime, maintenant: datetime) -> None:
         async with self.session() as s:
@@ -170,7 +187,7 @@ class Ordonnanceur:
             "echeance": alarmes.local(alarmes.lire_iso(alarme["derniere_echeance"]), fz),
             "depart": alarmes.local(alarmes.lire_iso(alarme["derniere_execution"]), fz) if partie else None,
             "retard_ms": retard,
-            "dernier_resultat": alarme["dernier_resultat"],
+            "dernier_resultat": self._tardifs.get(alarme["id"], alarme["dernier_resultat"]),
         }
 
     async def _fin_de_test(self, alarme: dict) -> None:

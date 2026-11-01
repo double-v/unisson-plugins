@@ -6,7 +6,9 @@ qu'il remplace : plus de conteneur à part. Plugin **officiel** d'unisson,
 **inactif par défaut** (tout le monde n'a pas un Denon). C'est le premier lot
 du #343 (spec 023 du cœur). Le réveil s'y ajoute (conception :
 [`docs/reveil.md`](docs/reveil.md)) : depuis la 0.2.0, les alarmes et leur
-ordonnanceur ; la lecture UPnP (la séance) viendra au lot 4.
+ordonnanceur ; depuis la 0.3.0, la séance qui allume l'ampli et lui fait
+jouer la musique d'unisson par UPnP. Il demande le cœur **0.5** (flux pour
+lecteurs réseau, spec 023). Les écrans viendront au lot 5.
 
 ## Ce qu'il apporte
 
@@ -42,10 +44,10 @@ ordonnanceur ; la lecture UPnP (la séance) viendra au lot 4.
   (`http://<nas>:8100/api/state`). Hublot bascule ainsi sans changer une
   ligne. Si le port est pris, l'écoute le journalise et le plugin continue
   sous `/api/plugins/denon/`. Elle ne touche pas aux signaux d'unisson.
-- **Le client UPnP/DLNA** (`backend/dlna.py`, pas encore branché : lot 4 du
-  réveil) : lit la description du lecteur, ses formats (`GetProtocolInfo`),
-  pilote AVTransport et compose le DIDL-Lite d'une piste. Rien de propre à
-  Denon ; testé contre un faux lecteur HTTP nourri de réponses de l'AVR-X4000.
+- **Le client UPnP/DLNA** (`backend/dlna.py`) : lit la description du
+  lecteur, ses formats (`GetProtocolInfo`), pilote AVTransport et compose le
+  DIDL-Lite d'une piste. Rien de propre à Denon ; testé contre un faux
+  lecteur HTTP nourri de réponses de l'AVR-X4000.
 - **Les alarmes du réveil** (0.2.0, `backend/alarmes.py`), dans la table
   `plugin_denon.alarmes` (migration du plugin). Une heure locale (`HH:MM` ou
   `HH:MM:SS`, dans le réglage `fuseau`), un masque de jours (lundi = 1 …
@@ -66,9 +68,56 @@ ordonnanceur ; la lecture UPnP (la séance) viendra au lot 4.
   d'heure, de jours ou d'activation réarme une alarme : un renommage à 07:00:01
   ne fait pas sauter celle de 07:00. Un passage en échec (base
   indisponible) est réessayé une seconde plus tard ; au démarrage, les
-  alarmes de test passées qu'un arrêt a laissées sont supprimées. Dans ce lot, le
-  déclenchement est journalisé (`dernier_resultat = "declenchee"`) ; la
-  séance viendra au lot 4.
+  alarmes de test passées qu'un arrêt a laissées sont supprimées. Une alarme
+  qui part lance la séance.
+- **La séance** (0.3.0, `backend/seance.py`), une seule à la fois : une
+  alarme qui part pendant une séance la remplace (sauf si elle-même ne peut
+  pas partir).
+  1. *Préparer*, sans toucher à l'ampli : l'adresse réseau d'unisson, le lien
+     telnet (5 s pour se reconnecter), les formats du lecteur (une fois par
+     séance), les pistes (`pistes_playlist`, mélangée si demandé, ou
+     `tirer_pistes`) et le flux de la première. Si l'une manque, l'ampli
+     n'est pas réveillé et le résultat le dit.
+  2. *Allumer* : `PWON`, le volume de départ (la cible si `montee_s = 0`), la
+     source réseau du pilote (`SINET`). On prend la main quelle que soit la
+     source.
+  3. *Attendre* `delai_reveil_s`, renvoyer volume et source, puis `Play`
+     jusqu'à `PLAYING` (3 essais).
+  4. *Jouer* : `SetAVTransportURI` → `Play` → `marquer_jouee`, la suivante
+     en attente par `SetNextAVTransportURI`. **Repli** si l'ampli refuse
+     `SetNext` ou s'arrête en fin de piste sans enchaîner :
+     `SetAVTransportURI` + `Play` de la suivante.
+  5. *Suivre* toutes les 2 s (`GetTransportInfo`, `GetPositionInfo`) : quand
+     `TrackURI` passe à la suivante, `marquer_jouee` et la suivante d'après
+     en attente. Une piste au flux impossible (fichier absent, aucun format
+     commun) est sautée et journalisée.
+  6. *Monter le volume* par pas de 0,5 dB sur `montee_s`. Elle s'arrête si
+     l'ampli pousse un volume qui n'est pas l'un de nos pas, ou qui
+     redescend sous le plus haut écho déjà vu : quelqu'un y a touché.
+  7. *Finir* : `duree` → `Stop` puis `PWSTANDBY` à l'échéance ; `pistes` →
+     `fin_valeur` pistes puis `PWSTANDBY` ; `sans_limite` → des lots de 50
+     rechargés, jamais de veille (`duree` recharge aussi). **Reprise de la
+     main** (autre source, `Stop` ou `Pause` venus d'ailleurs, autre média,
+     mise en veille) : la séance s'arrête, sans mise en veille. Un
+     `STOPPED` est une fin de piste si la piste a joué sa durée, à 4 s près
+     (1,5 × le suivi + 1 s) ; sinon c'est un `Stop` venu d'ailleurs. Sans
+     durée connue, un `STOPPED` alors que `RelTime` avançait est un `Stop`
+     d'ailleurs. Juste après un changement de piste, un `STOPPED` est ignoré
+     4 s ; au repli, une piste qui ne démarre pas est sautée.
+  8. *Fin anormale* après `PWON` (`lecture_impossible`, erreur) : `Stop`
+     puis `PWSTANDBY`. En `duree`, UPnP perdu n'arrête pas la séance : la
+     veille part par telnet à l'échéance ; en `pistes`, la veille part tout
+     de suite ; en `sans_limite`, pas de veille. **Désactiver le plugin** en pleine
+     séance : `Stop`, puis `PWSTANDBY` si le lien répond encore, avant de
+     fermer. Au **redémarrage** d'unisson, c'est au mieux (le cœur n'attend
+     pas encore les tâches des plugins à l'arrêt).
+
+  Le résultat va dans `dernier_resultat` : `en_cours`, puis `joue`,
+  `reprise_en_main`, `arretee`, `remplacee`, `pistes_epuisees`,
+  `lecture_impossible`, `plugin_desactive`, ou dès la préparation
+  `adresse_reseau_non_reglee`, `ampli_injoignable`, `aucune_piste`,
+  `aucun_format_commun`, `fichier_absent`, `contexte_inconnu`. Chaque étape
+  est journalisée (`unisson.plugin.denon`).
 - **Les routes du réveil**, sous `/api/plugins/denon/reveil/`, avec le même
   jeton (pas sur l'écoute à part) :
 
@@ -81,6 +130,10 @@ ordonnanceur ; la lecture UPnP (la séance) viendra au lot 4.
   | POST | `/tester` | `{dans_s: 5 \| 10, alarme_id?}` | 201 `{alarme, horloge, echeance, echeance_utc}` |
   | GET | `/tester/{id}` | | `{etat: en_attente \| partie \| manquee, echeance, depart, retard_ms, dernier_resultat}` |
   | GET | `/horloge` | | `{fuseau, local, decalage, utc, avertissement}` |
+  | POST | `/alarmes/{id}/essayer` | | 202 `{resultat: "en_cours", seance, derniere}` ; 409 `{error, message, reglage?}` si elle ne peut pas partir ; 404 |
+  | GET | `/seance` | | `{seance, derniere}` : alarme, `etat` (`preparation`, `reveil`, `lecture`, `finie`), `piste` et `suivante` (titre, artiste, album, pochette), `volume`, `volume_cible`, `montee`, `fin_mode`, `fin_prevue`, `pistes_restantes`, `pistes_jouees`, `sautees`, `enchainement` (`suivante` ou `repli`), `resultat` |
+  | POST | `/seance/arreter` | | `{arretee, seance, derniere}` : `Stop`, sans mise en veille |
+  | GET | `/diagnostic` | | `{ok, problemes, telnet, upnp: {joignable, description, formats, erreur}, adresse_reseau: {reglee, adresse, reglage: "/admin/settings#reseau", message}, pilote: {source_reseau, delai_reveil_s, plafond}, conseils, horloge, seance}` |
 
   Un identifiant (chemin, `contexte_id`, `genre_id`, `alarme_id`) au-delà
   de 2³¹−1 est refusé en 422.
@@ -105,10 +158,41 @@ ordonnanceur ; la lecture UPnP (la séance) viendra au lot 4.
 | `pilote` | `avrx4000` | un pilote inconnu refuse l'activation, avec son motif |
 | `jeton` (secret) | vide | vide : routes ouvertes, comme `denon-api` |
 | `port_ecoute` | 0 | lu à l'activation : le changer demande de réactiver |
+| `hote_upnp` | vide | l'hôte UPnP de l'ampli (description `http://<hôte>:8080/description.xml`), ou l'URL complète de sa description ; vide : `hote`. Relu à chaud |
+| `delai_reveil_s` | vide | secondes entre `PWON` et le premier `Play` ; vide : celui du pilote (8 s sur l'AVR-X4000). Relu à chaque séance |
 | `fuseau` | `Europe/Paris` | nom IANA : l'heure des alarmes est une heure locale ; un fuseau inconnu refuse l'activation. Réglé invalide à chaud, le réveil garde le dernier bon fuseau, le journalise une fois et le dit dans `avertissement` (`/horloge`, `/alarmes`) |
 
 `denon_host` et `denon_telnet_port`, que le cœur recopie depuis
 `DEDUP_DENON_*` (spec 023, US3), sont repris dans `hote` et `port_telnet`.
+
+Le réveil a besoin aussi du réglage **Réseau** d'unisson (`adresse_reseau`,
+l'adresse que l'ampli peut joindre) : sans lui, aucune alarme ne part
+(`adresse_reseau_non_reglee`), et le diagnostic montre le lien
+`/admin/settings#reseau`. Sur l'ampli, régler « Contrôle réseau » sur
+« Toujours activé » (sinon il ne répond plus en veille) et lui donner une IP
+fixe.
+
+## À confirmer en R0 (recette sur l'ampli)
+
+Les valeurs du pilote `avrx4000` sont provisoires :
+
+- `source_reseau = "SINET"` : la source à forcer, et le nom que l'ampli
+  pousse ensuite (`SINET`, la séance guette `NET` pour la reprise de la
+  main) ; peut-être l'ampli bascule-t-il seul sur un flux UPnP ;
+- `delai_reveil_s = 8` : le temps de sortie de veille avant qu'un `Play`
+  prenne, et si un `MV` ou un `SI` envoyé pendant ce temps est perdu (la
+  séance les renvoie après le délai) ;
+- `plafond = Plafond(frequence_max=96000, profondeur_max=24)` : le FLAC que
+  l'ampli lit vraiment ;
+- que `SetNextAVTransportURI` enchaîne, que `TrackURI` change au passage, et
+  l'état (`STOPPED` ?) d'une fin de piste sans enchaînement : le repli n'est
+  vérifié que contre le faux lecteur ;
+- les états au réveil (`TRANSITIONING` puis `PLAYING`), le format de
+  `RelTime` et `TrackDuration` pendant la lecture, la faute d'un `Play`
+  envoyé en veille ;
+- que l'ampli renvoie bien `MVxxx` après chaque pas de volume (sans écho, la
+  montée ne sait pas qu'on y a touché, et va jusqu'au bout) ;
+- et le relevé du lot 2 (`docs/reveil.md`, « À vérifier pendant la recette »).
 
 ## Basculer depuis `denon-api`
 
@@ -139,8 +223,13 @@ PYTHONPATH=. TEST_DATABASE_URL=postgresql+asyncpg://dedup:dedup@localhost:5432/d
   -c backend/pyproject.toml --rootdir=backend -p backend.tests.conftest
 ```
 
-Les faux sont posés à la frontière : un faux ampli TCP, un vrai serveur HTTP,
-une horloge injectée dans l'ordonnanceur. La migration est jouée dans
+Les faux sont posés à la frontière : un faux ampli TCP (qui renvoie l'écho
+des commandes, comme un AVR), un vrai serveur HTTP qui joue un lecteur DLNA
+à états (`tests/aides_seance.py` : `Play`, `RelTime` qui avance, `NextURI`
+en fin de piste, `Stop` venu d'ailleurs, `SetNext` refusé…), la vraie
+façade du cœur avec de vraies pistes en base et sur le disque, et une
+horloge injectée dans l'ordonnanceur. La séance tourne avec des durées
+courtes (`Cadence`). La migration est jouée dans
 `plugin_denon` sur la base de test, et le schéma retiré après chaque test.
 Le testeur de fuseau est éprouvé en temps réel : `dans_s = 5` doit partir
 entre 5 et 6,5 s.

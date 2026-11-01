@@ -5,6 +5,7 @@ qui parle comme un AVR (trames terminées par `\\r`), jamais un faux lien.
 """
 
 import asyncio
+import re
 import shutil
 import socket
 import sys
@@ -24,6 +25,9 @@ from backend.plugins.chargeur import _publier_facade  # noqa: E402
 _publier_facade()
 
 
+_ECHO = re.compile(r"PWON|PWSTANDBY|MV\d{2,3}|SI[A-Z0-9]+")
+
+
 class FauxAmpli:
     def __init__(self):
         self.recues: list[tuple[float, str]] = []
@@ -32,6 +36,10 @@ class FauxAmpli:
         self._clients: list[asyncio.StreamWriter] = []
         self.serveur = None
         self.port = 0
+        # Comme un vrai AVR : il renvoie l'état que change une commande
+        # (`MV455` → `MV455`), ce que la séance guette pour la montée du volume.
+        self.echo = False
+        self.sans_echo: set[str] = set()  # commandes dont l'écho se perd
 
     async def demarrer(self, port: int = 0):
         self.serveur = await asyncio.start_server(self._client, "127.0.0.1", port)
@@ -46,6 +54,10 @@ class FauxAmpli:
                 tampon += morceau.decode()
                 *lignes, tampon = tampon.split("\r")
                 self.recues += [(time.monotonic(), l) for l in lignes]
+                if self.echo:
+                    for l in lignes:
+                        if _ECHO.fullmatch(l) and l not in self.sans_echo:
+                            ecrivain.write(f"{l}\r".encode())
         except ConnectionError:
             pass
         self.fermetures += 1  # le client a fermé (lecture à vide)
@@ -129,3 +141,59 @@ async def table(denon_installe):
     from backend.tests.conftest import test_session_factory
 
     return test_session_factory
+
+
+# ── la séance ───────────────────────────────────────────────────────────
+
+
+@pytest.fixture
+def music_root(tmp_path, monkeypatch):
+    from backend.config import settings
+
+    racine = tmp_path / "music"
+    racine.mkdir()
+    monkeypatch.setattr(settings, "music_root", racine)
+    return racine
+
+
+@pytest_asyncio.fixture
+async def dmr():
+    from denon.tests.aides_seance import DmrAEtats
+
+    d = DmrAEtats()
+    await d.demarrer()
+    yield d
+    await d.arreter()
+
+
+@pytest_asyncio.fixture
+async def adresse(client):
+    """`adresse_reseau` réglée par la route publique des réglages, puis vidée."""
+    from denon.tests.aides import port_libre
+    from denon.tests.aides_reveil import LOCAL
+    from denon.tests.aides_seance import ip_locale
+
+    hote = ip_locale() or "192.0.2.10"
+    valeur = f"http://{hote}:{port_libre()}"
+    r = await client.put("/api/settings/preferences", json={"adresse_reseau": valeur}, headers=LOCAL)
+    assert r.status_code == 200, r.text
+    yield valeur
+    r = await client.put("/api/settings/preferences", json={"adresse_reseau": ""}, headers=LOCAL)
+    assert r.status_code == 200, r.text
+
+
+@pytest_asyncio.fixture
+async def pistes(db_session, sample_data, music_root, tmp_path):
+    """Six vraies pistes FLAC de 3 s, sur de vrais fichiers sous `music_root`.
+    Assez courtes pour enchaîner vite, assez longues pour qu'une base lente
+    (partagée par d'autres suites) ne fasse pas sauter une piste entière."""
+    from backend.tests.bibliotheque_flux import piste
+
+    fichier = tmp_path / "source.flac"
+    fichier.write_bytes(b"fLaC" + bytes(64))
+    album = sample_data["album1"]
+    return [
+        await piste(db_session, album, music_root, fichier, nom=f"{i:02}.flac", format="FLAC", sample_rate=44100,
+                    bits_per_sample=16, duration_seconds=3.0, title_tag=f"Piste {i}")
+        for i in range(1, 7)
+    ]

@@ -10,6 +10,8 @@ from __future__ import annotations
 import math
 import re
 
+from unisson.plugin import Plafond
+
 _COMMANDE = re.compile(r"[A-Z0-9? ]{1,32}")
 _VOLUME = re.compile(r"\d{2,3}")
 _SOURCE = re.compile(r"SI\S+")
@@ -34,6 +36,17 @@ class Avrx4000:
     libelle = "Denon AVR-X4000"
     port_defaut = 23
     requetes_initiales = ("PW?", "MV?", "MU?", "SI?")
+
+    # Le réveil (`seance.py`). Valeurs provisoires, **à confirmer en R0**
+    # (recette sur l'ampli, `docs/reveil.md`) :
+    # - la commande qui bascule sur la source réseau ; None : on n'en envoie
+    #   aucune (l'ampli bascule seul quand on lui fait jouer un flux) ;
+    source_reseau: str | None = "SINET"
+    # - le temps de sortie de veille avant que `Play` prenne (le réglage
+    #   `delai_reveil_s` du plugin le remplace) ;
+    delai_reveil_s: float = 8.0
+    # - ce que l'ampli lit vraiment, mieux que ce qu'il annonce.
+    plafond: Plafond | None = Plafond(frequence_max=96000, profondeur_max=24)
 
     def valider(self, commande: str) -> bool:
         return isinstance(commande, str) and bool(_COMMANDE.fullmatch(commande))
@@ -72,6 +85,10 @@ class Avrx4000:
 
     def volume(self, db: float) -> str:
         return f"MV{_arrondi((db + 80) * 10):03d}"
+
+    def est_source_reseau(self, source: str | None) -> bool:
+        """La source de l'état (`NET` après `SINET`) est-elle la source réseau ?"""
+        return self.source_reseau is not None and source == self.source_reseau.removeprefix("SI")
 
     def volume_plus(self) -> str:
         return "MVUP"

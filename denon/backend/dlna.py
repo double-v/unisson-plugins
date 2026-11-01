@@ -360,6 +360,11 @@ class LecteurDlna:
         self._propre = client is None
         self._services: tuple[str, Services] | None = None
 
+    def adresse(self) -> str:
+        """L'adresse de la description, telle que réglée (lève si le réglage
+        est vide ou illisible)."""
+        return self._description()
+
     async def __aenter__(self) -> LecteurDlna:
         return self
 

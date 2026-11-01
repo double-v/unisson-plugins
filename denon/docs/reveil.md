@@ -47,8 +47,9 @@ Table `plugin_denon.alarmes` (migration du plugin, dans son schéma) :
 
 Une alarme à `jours = 0` se désactive après son passage.
 
-Réglages ajoutés au plugin : `fuseau` (défaut `Europe/Paris`) et
-`hote_upnp` (vide : l'hôte telnet, port 8080).
+Réglages ajoutés au plugin : `fuseau` (défaut `Europe/Paris`),
+`hote_upnp` (vide : l'hôte telnet, port 8080) et `delai_reveil_s` (vide :
+celui du pilote).
 
 ## Le déclenchement
 
@@ -102,6 +103,82 @@ remplace.
 
 Chaque étape est journalisée (`unisson.plugin.denon`), et le résultat va
 dans `dernier_resultat`.
+
+### Ce que le lot 4 a tranché là où la conception était muette
+
+- **Préparer avant d'allumer** : l'adresse réseau, le lien telnet, les
+  formats, les pistes et le flux de la première se vérifient avant `PWON`.
+  Une alarme qui ne peut pas jouer ne réveille pas l'ampli (ni la maison).
+- **Volume et source renvoyés** après `delai_reveil_s` : un `MV` ou un `SI`
+  envoyé pendant la sortie de veille a pu se perdre (à vérifier en R0).
+- **Une alarme qui ne peut pas partir ne remplace pas** la séance en cours :
+  la musique qui joue continue.
+- **`duree` recharge aussi** des lots de 50 : une heure de musique dépasse
+  souvent 50 pistes courtes, pas seulement en `sans_limite`.
+- **Fin de piste ou `Stop` d'ailleurs** : on compare le temps joué (recalé
+  sur chaque `RelTime`) à la durée, avec une marge de 1,5 × le suivi + 1 s
+  (4 s). Un `Stop` dans les 4 dernières secondes passe pour une fin de
+  piste ; une durée inconnue aussi.
+- **Reprise de la main** élargie : un autre média dans `TrackURI`, et une
+  mise en veille (`PWSTANDBY` poussé), arrêtent aussi la séance.
+- **`arreter`** envoie `Stop` (la musique s'arrête), jamais `PWSTANDBY`.
+- **Le résultat** : la séance l'écrit elle-même à la fin ; l'accroche de
+  l'ordonnanceur rend None pour ne pas écraser un résultat déjà écrit, et
+  le résumé d'une alarme de test le reprend (`resultat_tardif`).
+- **Réglage `delai_reveil_s`** (vide : le pilote) : la mesure de R0 se pose
+  sans nouvelle version.
+
+### Après relecture (PR #11)
+
+- **Fin anormale après `PWON`** (`lecture_impossible`, `erreur:*`) : `Stop`
+  si une piste a été posée, puis `PWSTANDBY`. Une reprise de la main, elle,
+  ne met jamais en veille.
+- **`duree` sans UPnP** : la séance sonde encore ; à l'échéance, `PWSTANDBY`
+  part par telnet si le lien répond (résultat `ampli_injoignable`). En
+  `pistes`, UPnP perdu finit comme une fin normale : `PWSTANDBY` par telnet
+  si le lien répond (résultat `ampli_injoignable`). En `sans_limite`, UPnP
+  perdu finit la séance **sans** veille : ce mode ne met jamais l'ampli en
+  veille de lui-même.
+- **Après un changement d'URI**, un `STOPPED` est ignoré pendant
+  `attente_play_s` (4 s) : l'ampli passe par là en changeant de piste. Au
+  repli, une piste qui ne démarre pas (3 essais de `Play`) est sautée
+  (`lecture_refusee`).
+- **Durée inconnue** : un `STOPPED` alors que `RelTime` avançait encore au
+  suivi précédent est un `Stop` venu d'ailleurs ; sinon, une fin de piste.
+- **`arreter`** envoie `Stop` dès qu'un `SetAVTransportURI` est parti, même
+  pendant l'attente de `PLAYING`.
+- **Désactivation en pleine séance** (décision de l'opérateur,
+  2026-11-01) : `Stop` UPnP (2 s au plus), puis `PWSTANDBY` par le lien
+  s'il est encore connecté, avant de fermer le lecteur et le lien. Pour que
+  la séance s'arrête avant que le lien ne meure, le lien tourne en tâche
+  fille de la séance (`Seances.tourner(lien.tourner)`). La veille n'est
+  **garantie qu'à la désactivation**. Au **redémarrage** d'unisson, c'est au
+  mieux : le cœur n'attend pas les tâches des plugins à l'arrêt
+  (`arreter_tout`), et `asyncio.run` les annule de nouveau (voir « Suites »).
+- **Le lien qui meurt** (une panne, pas une désactivation) coupe la séance
+  avec le motif `lien_mort` : `Stop` seul, puis le plugin passe en panne.
+- **Le ménage de fin** (montée, `Stop`, veille) tourne sous bouclier : une
+  seconde annulation (« Arrêter » puis désactiver) ne l'interrompt pas, et
+  l'état et le résultat de la séance sont posés quand même.
+- **La montée** s'arrête sur une règle de monotonie : les échos de nos pas
+  arrivent dans l'ordre ; un volume qui n'est pas l'un de nos pas, ou qui
+  redescend sous le plus haut écho vu, est un geste étranger (une baisse
+  d'un cran compte, un écho manquant ne gêne pas). Les volumes poussés sont
+  relevés un par un par un écouteur du lien, pas lus en instantané.
+- **Le résultat** s'écrit sous `asyncio.shield` : une annulation tardive ne
+  l'empêche pas. Une désactivation pendant un remplacement ne lance pas la
+  séance suivante.
+
+### Suites
+
+- **Le cœur doit attendre les tâches des plugins à l'arrêt** (`arreter_tout`
+  n'attend rien) : sans cela, la veille au redémarrage reste « au mieux ».
+  Traité à part, côté cœur.
+- **La suite des `MV` reçus** est relevée par un écouteur du lien
+  (`Lien.ecouter`) pendant la montée, plutôt qu'un instantané de
+  `etat["volume"]` : une baisse d'un cran recouverte par l'écho du pas
+  suivant se voyait mal. Reste à faire : un relevé partagé des trames (pour
+  le diagnostic, et pour toute la séance), si un autre besoin s'en sert.
 
 ## Le testeur de fuseau (demande de l'opérateur)
 
