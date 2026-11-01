@@ -59,11 +59,18 @@ class DmrAEtats(FauxLecteur):
         self.enchaine = True
         self.refuser_suivante = False
         self.refus_play = 0  # nombre de `Play` refusés (l'ampli sort de veille)
+        self.urls_refusees: set[str] = set()  # `Play` refusé (714) pour ces pistes
+        self.demarrage_s = 0.0  # après `Play`, TRANSITIONING pendant ce temps
+        self.pause_au_passage = 0.0  # en enchaînant, STOPPED pendant ce temps
+        self._pret = 0.0  # fin de l'état d'attente (TRANSITIONING ou STOPPED de passage)
+        self.reltime_zero = 0  # GetPositionInfo rend RelTime 0 ce nombre de fois (lu à la fin de piste)
         self.jouees: list[str] = []  # chaque début de lecture d'une URL
 
     # ── ce que fait le lecteur ──────────────────────────────────────────
 
     def _avancer(self) -> None:
+        if self.etat in ("TRANSITIONING", "PASSAGE") and time.monotonic() >= self._pret:
+            self.etat, self.debut = "PLAYING", self._pret
         while self.etat == "PLAYING" and self.courante is not None:
             duree = self.courante[1]
             if duree is None or time.monotonic() - self.debut < duree:
@@ -72,12 +79,22 @@ class DmrAEtats(FauxLecteur):
                 self.debut += duree
                 self.courante, self.suivante = self.suivante, None
                 self.jouees.append(self.courante[0])
+                if self.pause_au_passage:
+                    self.etat, self._pret = "PASSAGE", self.debut + self.pause_au_passage
+                    self._avancer()
+                    return
             else:
                 self.etat, self.position = "STOPPED", 0.0
 
     def temps(self) -> float:
         self._avancer()
+        if self.etat in ("TRANSITIONING", "PASSAGE"):
+            return 0.0
         return time.monotonic() - self.debut if self.etat == "PLAYING" else self.position
+
+    @property
+    def etat_annonce(self) -> str:
+        return "STOPPED" if self.etat == "PASSAGE" else self.etat
 
     # ── ce que fait quelqu'un d'autre ───────────────────────────────────
 
@@ -120,12 +137,17 @@ class DmrAEtats(FauxLecteur):
                 return 500, faute(701, "Transition not available")
             if self.courante is None:
                 return 500, faute(701, "Transition not available")
+            if self.courante[0] in self.urls_refusees:
+                return 500, faute(714, "Illegal MIME-type")
             if self.etat == "PAUSED_PLAYBACK":
                 self.debut = time.monotonic() - self.position
-            elif self.etat != "PLAYING":
-                self.debut = time.monotonic()
+                self.etat = "PLAYING"
+            elif self.etat not in ("PLAYING", "TRANSITIONING"):
                 self.jouees.append(self.courante[0])
-            self.etat = "PLAYING"
+                if self.demarrage_s:
+                    self.etat, self._pret = "TRANSITIONING", time.monotonic() + self.demarrage_s
+                else:
+                    self.etat, self.debut = "PLAYING", time.monotonic()
         elif r.action == "Stop":
             self.etat, self.position = "STOPPED", 0.0
         elif r.action == "Pause":
@@ -133,12 +155,16 @@ class DmrAEtats(FauxLecteur):
             self.etat = "PAUSED_PLAYBACK"
         elif r.action == "GetTransportInfo":
             return 200, _enveloppe("GetTransportInfo", {
-                "CurrentTransportState": self.etat, "CurrentTransportStatus": "OK", "CurrentSpeed": "1"})
+                "CurrentTransportState": self.etat_annonce, "CurrentTransportStatus": "OK", "CurrentSpeed": "1"})
         elif r.action == "GetPositionInfo":
             url, duree = self.courante or ("", None)
+            temps = self.temps()
+            if self.reltime_zero > 0:
+                self.reltime_zero -= 1
+                temps = 0.0
             return 200, _enveloppe("GetPositionInfo", {
                 "Track": "1" if url else "0", "TrackDuration": _temps(duree) if url else "0:00:00",
-                "TrackMetaData": "", "TrackURI": _x(url), "RelTime": _temps(self.temps()),
+                "TrackMetaData": "", "TrackURI": _x(url), "RelTime": _temps(temps),
                 "AbsTime": "NOT_IMPLEMENTED", "RelCount": "0", "AbsCount": "0"})
         elif r.action == "GetMediaInfo":
             return 200, _enveloppe("GetMediaInfo", {

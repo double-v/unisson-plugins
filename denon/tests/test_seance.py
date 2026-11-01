@@ -8,6 +8,7 @@
 """
 
 import asyncio
+import contextlib
 from dataclasses import dataclass
 
 import pytest
@@ -56,7 +57,7 @@ class Banc:
         a = await self.poser(**champs)
         return a, await self.seances.lancer(a, ecrire=True)
 
-    async def fin(self, delai: float = 10) -> str:
+    async def fin(self, delai: float = 25) -> str:
         tache = self.seances._tache
         await asyncio.wait_for(asyncio.shield(tache), delai)
         return self.seances.derniere["resultat"]
@@ -67,9 +68,10 @@ class Banc:
 
 @pytest_asyncio.fixture
 async def banc(client, table, faux_ampli, dmr):
-    taches = []
+    taches, bancs = [], []
 
-    async def fabriquer(cadence: Cadence = CADENCE, delai: float = 0.05, port: int | None = None) -> Banc:
+    async def fabriquer(cadence: Cadence = CADENCE, delai: float = 0.05, port: int | None = None,
+                        session=None) -> Banc:
         faux_ampli.echo = True
         lien = Lien(lambda: Config("127.0.0.1", port or faux_ampli.port, 0.01), PILOTES["avrx4000"],
                     attente_min=0.05, attente_max=0.2)
@@ -79,17 +81,54 @@ async def banc(client, table, faux_ampli, dmr):
             await asyncio.sleep(0.05)
         lecteur = LecteurDlna(f"{dmr.base}/description.xml", delai=1)
         ordo = Ordonnanceur(table, lambda: PARIS)
-        seances = Seances(contexte(), lien, lecteur, table, fuseau=lambda: PARIS, delai_reveil_s=lambda: delai,
+        seances = Seances(contexte(), lien, lecteur, session or table, fuseau=lambda: PARIS, delai_reveil_s=lambda: delai,
                           cadence=cadence, ordonnanceur=ordo)
         ordo.declencher = seances.declencher
         superviseur = asyncio.create_task(seances.tourner())
         taches.append(superviseur)
-        return Banc(faux_ampli, dmr, lien, seances, ordo, table, superviseur)
+        bancs.append(banc_ := Banc(faux_ampli, dmr, lien, seances, ordo, table, superviseur))
+        return banc_
 
     yield fabriquer
     for t in reversed(taches):
         t.cancel()
         await asyncio.gather(t, return_exceptions=True)
+    for b in bancs:  # aucun appel en base ne survit au test
+        await attendre(lambda: not b.seances.en_vol, delai=10)
+
+
+@pytest_asyncio.fixture
+async def longues(db_session, sample_data, music_root, tmp_path):
+    """Deux pistes de 30 s et une sans durée connue : un geste « en milieu
+    de piste » le reste, même sous charge."""
+    from backend.tests.bibliotheque_flux import piste
+
+    fichier = tmp_path / "longue.flac"
+    fichier.write_bytes(b"fLaC" + bytes(64))
+    album = sample_data["album1"]
+    return [
+        await piste(db_session, album, music_root, fichier, nom=nom, format="FLAC", sample_rate=44100,
+                    bits_per_sample=16, duration_seconds=duree, title_tag=nom)
+        for nom, duree in (("l1.flac", 30.0), ("l2.flac", 30.0), ("sans-duree.flac", None))
+    ]
+
+
+def session_lente(table, retard: float = 0.4):
+    """La base qui met du temps à répondre (la frontière, pas un module)."""
+
+    @contextlib.asynccontextmanager
+    async def ouvrir():
+        await asyncio.sleep(retard)
+        async with table() as s:
+            yield s
+
+    return ouvrir
+
+
+def volumes(b) -> list[float]:
+    from denon.backend.pilotes import lire_volume
+
+    return [lire_volume(c[2:]) for c in b.telnet() if c.startswith("MV")]
 
 
 async def comptes(db_session) -> dict[int, int]:
@@ -137,19 +176,19 @@ async def test_fin_apres_deux_pistes_par_setnext_puis_veille(banc, adresse, pist
     assert (await relire(b.session, a["id"]))["dernier_resultat"] == "joue"
     # Le DIDL porte titre, artiste et durée.
     didl = b.dmr.soaps[[r.action for r in b.dmr.soaps].index("SetAVTransportURI")].arguments["CurrentURIMetaData"]
-    assert "Piste 1" in didl and "Test Artist" in didl and 'duration="0:00:01.600"' in didl
+    assert "Piste 1" in didl and "Test Artist" in didl and 'duration="0:00:03.000"' in didl
 
 
 async def test_fin_a_la_duree_stop_puis_veille(banc, adresse, pistes):
     b = await banc()
-    _, code = await b.lancer(fin_mode="duree", fin_valeur=2, montee_s=0)  # 2 « minutes » de 1 s
+    _, code = await b.lancer(fin_mode="duree", fin_valeur=4, montee_s=0)  # 4 « minutes » de 1 s
     assert code == "en_cours"
     vue = b.seances.vue()["seance"]
     assert vue["fin_mode"] == "duree" and vue["fin_prevue"] is not None
     assert await b.fin() == "joue"
     assert b.dmr.actions()[-1] == "Stop"
     assert b.telnet()[-1] == "PWSTANDBY"
-    # 2 s de musique : au moins deux pistes de 1,6 s ont commencé.
+    # 4 s de musique : au moins deux pistes de 3 s ont commencé.
     assert len(b.dmr.jouees) >= 2
 
 
@@ -159,7 +198,7 @@ async def test_sans_limite_recharge_et_ne_se_met_jamais_en_veille(banc, adresse,
     _, code = await b.lancer(contexte="playlist", contexte_id=pl, fin_mode="sans_limite", fin_valeur=None, montee_s=0)
     assert code == "en_cours"
     # La playlist (2 pistes) est rejouée : le lot se recharge.
-    await attendre(lambda: b.seances.courante is not None and b.seances.courante.jouees >= 3, delai=8)
+    await attendre(lambda: b.seances.courante is not None and b.seances.courante.jouees >= 3, delai=20)
     assert b.seances.en_cours
     assert await b.seances.arreter() is True
     assert await b.fin() == "arretee"
@@ -171,26 +210,34 @@ async def test_sans_limite_recharge_et_ne_se_met_jamais_en_veille(banc, adresse,
 # ── le volume ───────────────────────────────────────────────────────────
 
 
-async def test_la_montee_va_du_depart_a_la_cible_par_demi_db(banc, adresse, pistes):
+async def test_la_montee_va_du_depart_a_la_cible_par_demi_db(banc, adresse, longues, db_session):
     b = await banc()
-    await b.lancer(fin_mode="sans_limite", fin_valeur=None, volume_depart_db=-50, volume_cible_db=-48, montee_s=1)
-    await attendre(lambda: b.seances.courante is not None and b.seances.courante.montee == "finie", delai=5)
-    mv = [c for c in b.telnet() if c.startswith("MV")]
-    assert mv == ["MV300", "MV300", "MV305", "MV310", "MV315", "MV320"]
-    assert b.lien.etat["volume"] == -48
+    pl = await playlist(db_session, longues[:1])
+    await b.lancer(contexte="playlist", contexte_id=pl, fin_mode="sans_limite", fin_valeur=None,
+                   volume_depart_db=-50, volume_cible_db=-46, montee_s=1)
+    await attendre(lambda: b.seances.courante is not None and b.seances.courante.montee == "finie", delai=15)
+    v = volumes(b)
+    assert v[0] == -50 and v[-1] == -46  # part du départ, finit à la cible
+    assert v == sorted(v) and all(-50 <= x <= -46 for x in v)  # monotone, bornée
+    assert all(round(x * 2) == x * 2 for x in v)  # par demi-dB
+    await attendre(lambda: b.lien.etat["volume"] == -46)
 
 
-async def test_la_montee_s_arrete_quand_on_touche_au_volume(banc, adresse, pistes):
+async def test_une_baisse_pendant_la_montee_l_arrete(banc, adresse, longues, db_session):
     b = await banc()
-    await b.lancer(fin_mode="sans_limite", fin_valeur=None, volume_depart_db=-60, volume_cible_db=-40, montee_s=4)
-    await attendre(lambda: sum(c.startswith("MV") for c in b.telnet()) >= 5, delai=5)
-    await b.ampli.pousser("MV25\r")  # quelqu'un baisse à -55 dB
-    await attendre(lambda: b.seances.courante.montee == "interrompue", delai=3)
-    envoyes = sum(c.startswith("MV") for c in b.telnet())
-    await asyncio.sleep(0.6)
-    assert sum(c.startswith("MV") for c in b.telnet()) == envoyes
+    pl = await playlist(db_session, longues[:1])
+    await b.lancer(contexte="playlist", contexte_id=pl, fin_mode="sans_limite", fin_valeur=None,
+                   volume_depart_db=-60, volume_cible_db=-40, montee_s=8)
+    await attendre(lambda: len(volumes(b)) >= 6 and b.lien.etat["volume"] == volumes(b)[-1], delai=15)
+    # Quelqu'un baisse à la télécommande, jusqu'au volume de départ : une
+    # valeur que la montée a déjà envoyée.
+    await b.ampli.pousser("MV20\r")
+    await attendre(lambda: b.seances.courante.montee == "interrompue", delai=10)
+    envoyes = len(volumes(b))
+    await asyncio.sleep(0.8)  # 4 pas auraient suivi
+    assert len(volumes(b)) == envoyes
     assert b.seances.en_cours  # la musique continue
-    assert b.seances.vue()["seance"]["volume"] == -55
+    assert b.seances.vue()["seance"]["volume"] == -60
 
 
 # ── l'enchaînement et le repli ──────────────────────────────────────────
@@ -213,6 +260,41 @@ async def test_repli_par_set_av_transport_uri(banc, adresse, pistes, db_session,
     assert b.telnet()[-1] == "PWSTANDBY"
 
 
+async def test_un_stopped_juste_apres_l_enchainement_n_est_pas_une_reprise(banc, adresse, pistes, db_session):
+    b = await banc()
+    b.dmr.pause_au_passage = 0.35  # moins que attente_play_s : l'ampli passe par STOPPED
+    pl = await playlist(db_session, pistes[:2])
+    await b.lancer(contexte="playlist", contexte_id=pl, fin_mode="pistes", fin_valeur=2, montee_s=0)
+    assert await b.fin() == "joue"
+    assert b.dmr.jouees == [url_de(adresse, p) for p in pistes[:2]]
+    assert b.telnet()[-1] == "PWSTANDBY"
+
+
+async def test_au_repli_une_piste_qui_ne_demarre_pas_est_sautee(banc, adresse, pistes, db_session):
+    b = await banc()
+    b.dmr.enchaine = False
+    b.dmr.urls_refusees = {url_de(adresse, pistes[1])}
+    pl = await playlist(db_session, pistes[:3])
+    await b.lancer(contexte="playlist", contexte_id=pl, fin_mode="pistes", fin_valeur=3, montee_s=0)
+    assert await b.fin() == "joue"
+    assert b.dmr.jouees == [url_de(adresse, pistes[0]), url_de(adresse, pistes[2])]
+    assert [(s["piste"], s["code"]) for s in b.seances.derniere["sautees"]] == [(pistes[1], "lecture_refusee")]
+    assert (await comptes(db_session))[pistes[1]] == 0
+
+
+async def test_un_reltime_a_zero_juste_avant_la_fin_n_est_pas_une_reprise(banc, adresse, pistes, db_session):
+    """GetTransportInfo dit PLAYING, puis GetPositionInfo, lu juste après la
+    fin de piste, rend RelTime 0 : le début de la piste ne recule pas. Ici,
+    RelTime reste à 0 jusqu'à la fin, pour que le dernier suivi le voie."""
+    b = await banc()
+    pl = await playlist(db_session, pistes[:1])
+    await b.lancer(contexte="playlist", contexte_id=pl, fin_mode="pistes", fin_valeur=1, montee_s=0)
+    await attendre(lambda: b.dmr.etat == "PLAYING" and b.dmr.temps() >= 2.2, delai=15)
+    b.dmr.reltime_zero = 10_000
+    assert await b.fin() == "joue"
+    assert b.telnet()[-1] == "PWSTANDBY"
+
+
 async def test_play_reessaye_pendant_la_sortie_de_veille(banc, adresse, pistes):
     b = await banc()
     b.dmr.refus_play = 2
@@ -228,6 +310,61 @@ async def test_play_toujours_refuse(banc, adresse, pistes):
     assert await b.fin() == "lecture_impossible"
     assert b.dmr.actions().count("Play") == 3
     assert (await relire(b.session, a["id"]))["dernier_resultat"] == "lecture_impossible"
+    # L'ampli allumé pour rien est rendu à la veille.
+    assert b.dmr.actions()[-1] == "Stop"
+    assert b.telnet()[-1] == "PWSTANDBY"
+
+
+async def test_une_erreur_apres_l_allumage_remet_l_ampli_en_veille(banc, adresse, pistes):
+    b = await banc()
+    a = await b.poser(fin_mode="pistes", fin_valeur=1, montee_s=0)
+    a["volume_cible_db"] = "fort"  # une alarme que rien ne valide plus : erreur à l'envoi du volume
+    assert await b.seances.lancer(a) == "en_cours"
+    assert await b.fin() == "erreur:TypeError"
+    assert b.telnet() == ["PWON", "PWSTANDBY"]
+    assert "Stop" not in b.dmr.actions()  # aucune piste posée
+
+
+async def test_duree_upnp_perdu_veille_par_telnet_a_l_echeance(banc, adresse, longues, db_session):
+    b = await banc()
+    pl = await playlist(db_session, longues[:1])
+    await b.lancer(contexte="playlist", contexte_id=pl, fin_mode="duree", fin_valeur=2, montee_s=0)
+    await attendre(lambda: b.seances.courante is not None and b.seances.courante.etat == "lecture", delai=10)
+    await b.dmr.arreter()  # l'ampli ne répond plus en UPnP
+    await asyncio.sleep(0.6)
+    assert b.seances.en_cours  # la séance sonde encore
+    assert await b.fin() == "ampli_injoignable"
+    assert b.telnet()[-1] == "PWSTANDBY"
+
+
+async def test_la_base_qui_tombe_a_la_recharge_ne_coupe_pas_la_piste(banc, adresse, pistes, db_session):
+    import backend.database as db_module
+
+    b = await banc()
+    pl = await playlist(db_session, pistes[:1])
+    await b.lancer(contexte="playlist", contexte_id=pl, fin_mode="duree", fin_valeur=30, montee_s=0)
+
+    def casse():
+        raise ConnectionError("base indisponible")
+
+    avant = db_module.async_session
+    db_module.async_session = casse  # la recharge de la playlist échoue
+    try:
+        assert await b.fin() == "joue"  # la piste a joué, puis plus rien : veille
+    finally:
+        db_module.async_session = avant
+    assert len(b.dmr.jouees) == 1 and b.telnet()[-1] == "PWSTANDBY"
+
+
+async def test_arreter_pendant_l_attente_de_playing(banc, adresse, pistes):
+    b = await banc(cadence=Cadence(**{**CADENCE.__dict__, "attente_play_s": 5.0}))
+    b.dmr.demarrage_s = 30  # l'ampli reste en TRANSITIONING
+    await b.lancer(fin_mode="pistes", fin_valeur=1, montee_s=0)
+    await attendre(lambda: "Play" in b.dmr.actions(), delai=10)
+    assert await b.seances.arreter() is True
+    assert await b.fin() == "arretee"
+    assert b.dmr.actions()[-1] == "Stop"
+    assert "PWSTANDBY" not in b.telnet()
 
 
 async def test_une_piste_sans_fichier_est_sautee(banc, adresse, pistes, db_session, music_root):
@@ -301,11 +438,12 @@ async def test_une_alarme_qui_echoue_laisse_jouer_la_seance_en_cours(banc, adres
 
 
 @pytest.mark.parametrize("geste", ["autre_source", "stop", "pause", "autre_media", "veille"])
-async def test_reprise_de_la_main_sans_mise_en_veille(banc, adresse, pistes, geste):
+async def test_reprise_de_la_main_sans_mise_en_veille(banc, adresse, longues, db_session, geste):
     b = await banc()
-    a, _ = await b.lancer(fin_mode="sans_limite", fin_valeur=None, montee_s=0)
-    await attendre(lambda: b.dmr.etat == "PLAYING" and b.lien.etat["source"] == "NET", delai=3)
-    await asyncio.sleep(0.15)
+    pl = await playlist(db_session, longues[:2])
+    a, _ = await b.lancer(contexte="playlist", contexte_id=pl, fin_mode="sans_limite", fin_valeur=None, montee_s=0)
+    await attendre(lambda: b.dmr.etat == "PLAYING" and b.lien.etat["source"] == "NET", delai=10)
+    await asyncio.sleep(0.8)  # au-delà de la fenêtre de grâce du changement de piste
     if geste == "autre_source":
         await b.ampli.pousser("SITV\r")
     elif geste == "stop":
@@ -316,9 +454,20 @@ async def test_reprise_de_la_main_sans_mise_en_veille(banc, adresse, pistes, ges
         b.dmr.jouer_autre("http://192.0.2.50/radio.mp3")
     else:
         await b.ampli.pousser("PWSTANDBY\r")
-    assert await b.fin(3) == "reprise_en_main"
+    assert await b.fin() == "reprise_en_main"
     assert "PWSTANDBY" not in b.telnet()
     assert (await relire(b.session, a["id"]))["dernier_resultat"] == "reprise_en_main"
+
+
+async def test_sans_duree_un_stop_pendant_que_reltime_avance_est_une_reprise(banc, adresse, longues, db_session):
+    b = await banc()
+    pl = await playlist(db_session, longues[2:3])  # TrackDuration NOT_IMPLEMENTED, pas de durée en base
+    await b.lancer(contexte="playlist", contexte_id=pl, fin_mode="sans_limite", fin_valeur=None, montee_s=0)
+    await attendre(lambda: b.dmr.etat == "PLAYING", delai=10)
+    await asyncio.sleep(0.9)  # quelques suivis : RelTime avance
+    b.dmr.stop_externe()
+    assert await b.fin() == "reprise_en_main"
+    assert len(b.dmr.jouees) == 1
 
 
 # ── une seule séance à la fois ──────────────────────────────────────────
@@ -326,9 +475,9 @@ async def test_reprise_de_la_main_sans_mise_en_veille(banc, adresse, pistes, ges
 
 async def test_une_alarme_remplace_la_seance_en_cours(banc, adresse, pistes, db_session):
     b = await banc()
-    premiere, _ = await b.lancer(nom="Première", fin_mode="sans_limite", fin_valeur=None, montee_s=0)
-    await attendre(lambda: b.dmr.etat == "PLAYING")
     pl = await playlist(db_session, pistes[3:4])
+    premiere, _ = await b.lancer(nom="Première", fin_mode="sans_limite", fin_valeur=None, montee_s=0)
+    await attendre(lambda: b.dmr.etat == "PLAYING", delai=10)
     seconde, code = await b.lancer(nom="Seconde", contexte="playlist", contexte_id=pl, fin_mode="pistes",
                                    fin_valeur=1, montee_s=0)
     assert code == "en_cours"
@@ -381,5 +530,36 @@ async def test_la_fin_du_superviseur_arrete_la_seance_et_ferme_tout(banc, adress
     await asyncio.gather(b.superviseur, return_exceptions=True)
     assert not b.seances.en_cours
     assert (await relire(b.session, a["id"]))["dernier_resultat"] == "plugin_desactive"
+    # De son mieux : Stop, puis la veille par le lien encore connecté.
+    assert b.dmr.actions()[-1] == "Stop"
+    assert b.telnet()[-1] == "PWSTANDBY"
     await attendre(lambda: b.dmr.ouvertes == 0)
     assert not [t for t in asyncio.all_tasks() if t.get_name().startswith("denon:seance")]
+    await attendre(lambda: not b.seances.en_vol, delai=5)  # rien d'écrit après le test
+
+
+async def test_le_resultat_s_ecrit_meme_annule_pendant_l_ecriture(banc, adresse, pistes, db_session, table):
+    b = await banc(session=session_lente(table))
+    pl = await playlist(db_session, pistes[:1])
+    a, _ = await b.lancer(contexte="playlist", contexte_id=pl, fin_mode="pistes", fin_valeur=1, montee_s=0)
+    await attendre(lambda: (b.seances.derniere or {}).get("resultat") == "joue", delai=10)
+    b.seances._tache.cancel()  # annulation tardive : l'écriture vient de commencer
+    await asyncio.gather(b.seances._tache, return_exceptions=True)
+    await attendre(lambda: not b.seances.en_vol, delai=5)
+    assert (await relire(table, a["id"]))["dernier_resultat"] == "joue"
+
+
+async def test_desactive_pendant_un_remplacement_rien_ne_demarre(banc, adresse, pistes, longues, db_session, table):
+    b = await banc(session=session_lente(table))
+    pl = await playlist(db_session, longues[:1])
+    await b.lancer(contexte="playlist", contexte_id=pl, fin_mode="sans_limite", fin_valeur=None, montee_s=0)
+    await attendre(lambda: b.dmr.etat == "PLAYING", delai=10)
+    premiere = b.seances.courante
+    seconde = asyncio.create_task(b.seances.lancer(await b.poser(nom="Seconde", fin_mode="pistes", fin_valeur=1)))
+    # La première s'arrête (son résultat s'écrit lentement) : on désactive.
+    await attendre(lambda: premiere.motif_arret == "remplacee", delai=10)
+    b.superviseur.cancel()
+    assert await seconde == "plugin_desactive"
+    await asyncio.gather(b.superviseur, return_exceptions=True)
+    assert not [t for t in asyncio.all_tasks() if t.get_name().startswith("denon:seance")]
+    await attendre(lambda: not b.seances.en_vol, delai=5)  # rien d'écrit après le test

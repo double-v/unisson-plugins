@@ -128,6 +128,35 @@ dans `dernier_resultat`.
 - **Réglage `delai_reveil_s`** (vide : le pilote) : la mesure de R0 se pose
   sans nouvelle version.
 
+### Après relecture (PR #11)
+
+- **Fin anormale après `PWON`** (`lecture_impossible`, `erreur:*`) : `Stop`
+  si une piste a été posée, puis `PWSTANDBY`. Une reprise de la main, elle,
+  ne met jamais en veille.
+- **`duree` sans UPnP** : la séance sonde encore ; à l'échéance, `PWSTANDBY`
+  part par telnet si le lien répond (résultat `ampli_injoignable`). En
+  `pistes` et `sans_limite`, UPnP perdu finit la séance sans veille.
+- **Après un changement d'URI**, un `STOPPED` est ignoré pendant
+  `attente_play_s` (4 s) : l'ampli passe par là en changeant de piste. Au
+  repli, une piste qui ne démarre pas (3 essais de `Play`) est sautée
+  (`lecture_refusee`).
+- **Durée inconnue** : un `STOPPED` alors que `RelTime` avançait encore au
+  suivi précédent est un `Stop` venu d'ailleurs ; sinon, une fin de piste.
+- **La montée** s'arrête si le volume poussé n'est ni notre dernier pas, ni
+  l'avant-dernier (dont l'écho peut être en route) : une baisse à la
+  télécommande repasse par nos pas d'avant.
+- **`arreter`** envoie `Stop` dès qu'un `SetAVTransportURI` est parti, même
+  pendant l'attente de `PLAYING`.
+- **Désactivation ou redémarrage en pleine séance** (décision de
+  l'opérateur, 2026-11-01) : on fait de son mieux pour arrêter. `Stop` UPnP
+  (2 s au plus), puis `PWSTANDBY` par le lien s'il est encore connecté,
+  avant de fermer le lecteur et le lien. Pour que la séance s'arrête avant
+  que le lien ne meure, le lien tourne en tâche fille de la séance
+  (`Seances.tourner(lien.tourner)`) ; sans lien vivant, c'est un `Stop` seul.
+- **Le résultat** s'écrit sous `asyncio.shield` : une annulation tardive ne
+  l'empêche pas. Une désactivation pendant un remplacement ne lance pas la
+  séance suivante.
+
 ## Le testeur de fuseau (demande de l'opérateur)
 
 « Tester dans 5 s » et « Tester dans 10 s » : le serveur prend l'heure

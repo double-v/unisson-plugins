@@ -61,7 +61,6 @@ def enregistrer(ctx: Contexte) -> None:
 
     lien = Lien(config, pilote, journal=ctx.journal)
     ctx.routeur(routes.fabriquer(lien, lambda: ctx.secret("jeton")))
-    ctx.tache(lien.tourner)
 
     # Relue à chaque appel : changer d'hôte prend effet à chaud.
     lecteur = dlna.LecteurDlna(lambda: adresse_upnp(ctx.reglage("hote_upnp"), ctx.reglage("hote")))
@@ -72,7 +71,9 @@ def enregistrer(ctx: Contexte) -> None:
     ctx.routeur(reveil.fabriquer(ordonnanceur, ctx.session, fuseau, lambda: ctx.secret("jeton"),
                                  seances=seances, adresse_reseau=ctx.adresse_reseau))
     ctx.tache(ordonnanceur.tourner)
-    ctx.tache(seances.tourner)
+    # Le lien tourne sous la séance : à la désactivation, elle met l'ampli
+    # en veille avant que le lien ne se ferme.
+    ctx.tache(lambda: seances.tourner(lien.tourner))
     # Le port est lu à l'activation : le changer demande de réactiver le plugin.
     if port := ctx.reglage("port_ecoute"):
         seul = routes.fabriquer(lien, lambda: ctx.secret("jeton"))

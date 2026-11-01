@@ -100,7 +100,15 @@ lecteurs réseau, spec 023). Les écrans viendront au lot 5.
      main** (autre source, `Stop` ou `Pause` venus d'ailleurs, autre média,
      mise en veille) : la séance s'arrête, sans mise en veille. Un
      `STOPPED` est une fin de piste si la piste a joué sa durée, à 4 s près
-     (1,5 × le suivi + 1 s) ; sinon c'est un `Stop` venu d'ailleurs.
+     (1,5 × le suivi + 1 s) ; sinon c'est un `Stop` venu d'ailleurs. Sans
+     durée connue, un `STOPPED` alors que `RelTime` avançait est un `Stop`
+     d'ailleurs. Juste après un changement de piste, un `STOPPED` est ignoré
+     4 s ; au repli, une piste qui ne démarre pas est sautée.
+  8. *Fin anormale* après `PWON` (`lecture_impossible`, erreur) : `Stop`
+     puis `PWSTANDBY`. En `duree`, UPnP perdu n'arrête pas la séance : la
+     veille part par telnet à l'échéance. **Désactiver le plugin** (ou
+     redémarrer unisson) en pleine séance : `Stop`, puis `PWSTANDBY` si le
+     lien répond encore, avant de fermer.
 
   Le résultat va dans `dernier_resultat` : `en_cours`, puis `joue`,
   `reprise_en_main`, `arretee`, `remplacee`, `pistes_epuisees`,

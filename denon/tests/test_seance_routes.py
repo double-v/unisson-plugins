@@ -126,7 +126,7 @@ async def test_le_testeur_de_cinq_secondes_joue_une_piste(client, faux_ampli, dm
     assert len(dmr.jouees) == 1 and faux_ampli.commandes[-1] == "PWSTANDBY"
 
 
-async def test_desactiver_pendant_une_seance_ne_laisse_rien(client, faux_ampli, dmr, denon_installe, adresse, pistes):
+async def test_desactiver_pendant_une_seance_arrete_puis_ne_laisse_rien(client, faux_ampli, dmr, denon_installe, adresse, pistes):
     from backend.plugins import chargeur
 
     await activer(client, faux_ampli, dmr, denon_installe)
@@ -135,7 +135,10 @@ async def test_desactiver_pendant_une_seance_ne_laisse_rien(client, faux_ampli, 
     await seance_en_lecture(client)
 
     await chargeur.desactiver("denon")
-    await attendre(lambda: not [t for t in asyncio.all_tasks() if t.get_name().startswith(("denon:", "plugin:denon"))])
-    await attendre(lambda: faux_ampli.fermetures == 1 and dmr.ouvertes == 0)
-    assert "PWSTANDBY" not in faux_ampli.commandes
+    await attendre(lambda: not [t for t in asyncio.all_tasks() if t.get_name().startswith(("denon:", "plugin:denon"))],
+                   delai=10)
+    await attendre(lambda: faux_ampli.fermetures == 1 and dmr.ouvertes == 0, delai=10)
+    # De son mieux avant de fermer : Stop, puis la veille par le lien encore vivant.
+    assert dmr.actions()[-1] == "Stop"
+    assert faux_ampli.commandes[-1] == "PWSTANDBY"
     assert (await client.get(f"{RACINE}/seance", headers=AUTH)).status_code == 404

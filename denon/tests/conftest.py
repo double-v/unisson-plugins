@@ -183,7 +183,9 @@ async def adresse(client):
 
 @pytest_asyncio.fixture
 async def pistes(db_session, sample_data, music_root, tmp_path):
-    """Six vraies pistes FLAC de 1,6 s, sur de vrais fichiers sous `music_root`."""
+    """Six vraies pistes FLAC de 3 s, sur de vrais fichiers sous `music_root`.
+    Assez courtes pour enchaîner vite, assez longues pour qu'une base lente
+    (partagée par d'autres suites) ne fasse pas sauter une piste entière."""
     from backend.tests.bibliotheque_flux import piste
 
     fichier = tmp_path / "source.flac"
@@ -191,6 +193,6 @@ async def pistes(db_session, sample_data, music_root, tmp_path):
     album = sample_data["album1"]
     return [
         await piste(db_session, album, music_root, fichier, nom=f"{i:02}.flac", format="FLAC", sample_rate=44100,
-                    bits_per_sample=16, duration_seconds=1.6, title_tag=f"Piste {i}")
+                    bits_per_sample=16, duration_seconds=3.0, title_tag=f"Piste {i}")
         for i in range(1, 7)
     ]

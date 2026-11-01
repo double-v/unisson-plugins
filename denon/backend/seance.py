@@ -50,7 +50,7 @@ import time
 from collections import deque
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import Callable
+from typing import Awaitable, Callable
 
 from unisson.plugin import AdresseReseauNonReglee, FluxImpossible
 
@@ -99,14 +99,24 @@ def _vue_piste(p: Piste | None) -> dict | None:
             "duree": f.duree, "converti": f.converti}
 
 
+def _en_vol(ensemble: set, coro) -> asyncio.Future:
+    tache = asyncio.ensure_future(coro)
+    ensemble.add(tache)
+    tache.add_done_callback(ensemble.discard)
+    tache.add_done_callback(lambda t: t.cancelled() or t.exception())  # lue, même si personne n'attend plus
+    return tache
+
+
 def maintenant_utc() -> datetime:
     return datetime.now(timezone.utc)
 
 
 class Seance:
     def __init__(self, alarme: dict, ctx, lien: Lien, lecteur: LecteurDlna, *, delai_reveil_s: float,
-                 cadence: Cadence, journal: logging.Logger, maintenant: Callable[[], datetime] = maintenant_utc):
+                 cadence: Cadence, journal: logging.Logger, maintenant: Callable[[], datetime] = maintenant_utc,
+                 en_vol: set | None = None):
         self.alarme = alarme
+        self.en_vol = en_vol if en_vol is not None else set()  # les appels en base en cours
         self.ctx = ctx
         self.lien = lien
         self.pilote = lien.pilote
@@ -145,6 +155,13 @@ class Seance:
         self._tache_montee: asyncio.Task | None = None
         self._debut_piste = 0.0  # instant (monotone) où la piste courante a commencé
         self._duree_piste: float | None = None  # TrackDuration lu, sinon celle du flux
+        self._changement = 0.0  # dernier changement d'URI : un STOPPED juste après est ignoré
+        self._dernier_reltime: float | None = None
+        self._reltime_avance = False  # RelTime avançait entre les deux derniers suivis
+        self._upnp_perdu = False
+        self._prochaine_en_echec = False
+        self.allume = False  # PWON est parti : une fin anormale remet l'ampli en veille
+        self.uri_posee = False  # un SetAVTransportURI est parti : arrêter envoie Stop
 
     @property
     def ident(self) -> int:
@@ -179,6 +196,13 @@ class Seance:
         if self.courante is None:
             raise Echec(self._dernier_refus or "aucune_piste", "aucune piste jouable par ce lecteur")
 
+    async def _base(self, coro):
+        """Un appel au cœur qui touche la base, protégé de l'annulation :
+        couper une requête asyncpg en vol rend au pool une connexion morte.
+        L'appel finit seul ; `Seances.tourner` l'attend avant de fermer."""
+        tache = _en_vol(self.en_vol, coro)
+        return await asyncio.shield(tache)
+
     async def _attendre_lien(self) -> bool:
         fin = time.monotonic() + self.cadence.attente_lien_s
         while not self.lien.connecte:
@@ -191,14 +215,14 @@ class Seance:
         a = self.alarme
         n = a["fin_valeur"] if a["fin_mode"] == "pistes" else LOT
         if a["contexte"] == "playlist":
-            ids = await self.ctx.pistes_playlist(a["contexte_id"])
+            ids = await self._base(self.ctx.pistes_playlist(a["contexte_id"]))
             if a["melange"]:
                 random.shuffle(ids)
             return ids[:n]
-        return await self.ctx.tirer_pistes(
+        return await self._base(self.ctx.tirer_pistes(
             a["contexte"], a["contexte_id"], n=n,
             genre_id=a["genre_id"], format=a["format"], favoris=bool(a["favoris"]),
-        )
+        ))
 
     async def _prochaine(self) -> Piste | None:
         """La prochaine piste jouable ; les flux impossibles sont sautés. Un
@@ -219,7 +243,7 @@ class Seance:
                 self._succes_depuis_charge = False
             pid = self.file.popleft()
             try:
-                flux = await self.ctx.flux_lecteur(pid, self.accepte, self.pilote.plafond)
+                flux = await self._base(self.ctx.flux_lecteur(pid, self.accepte, self.pilote.plafond))
             except AdresseReseauNonReglee as e:
                 self._dernier_refus = e.code
                 self._log(logging.WARNING, "%s", e.libelle)
@@ -237,6 +261,19 @@ class Seance:
                 self._log(logging.INFO, "piste %s convertie (%s)", pid, flux.motif)
             return Piste(pid, flux)
 
+    async def _prochaine_sure(self) -> Piste | None:
+        """`_prochaine` pendant la lecture : une erreur (la base qui tombe à
+        la recharge) vaut « pas de suivante », la musique en cours continue."""
+        try:
+            piste = await self._prochaine()
+        except Exception as e:
+            if not self._prochaine_en_echec:  # réessayée à chaque suivi : journalisée une fois
+                self._log(logging.WARNING, "piste suivante introuvable : %r", e)
+            self._prochaine_en_echec = True
+            return None
+        self._prochaine_en_echec = False
+        return piste
+
     def _sauter(self, pid: int, code: str, libelle: str) -> None:
         self._dernier_refus = code
         self._log(logging.WARNING, "piste %s sautée (%s) : %s", pid, code, libelle)
@@ -248,33 +285,60 @@ class Seance:
     async def derouler(self) -> str:
         """La séance entière ; rend le code du résultat, sans jamais lever
         (une annulation porte son motif : `motif_arret`)."""
+        anormale = False
         try:
             code = await self._derouler()
         except Echec as e:
             self._log(logging.WARNING, "%s (%s)", e.message, e.code)
-            code = e.code
+            code, anormale = e.code, True
         except asyncio.CancelledError:
             if (tache := asyncio.current_task()) is not None:
                 tache.uncancel()
             code = self.motif_arret or "interrompue"
             self._log(logging.INFO, "arrêtée (%s)", code)
-            if self.motif_arret == "arretee" and self.etat == "lecture":
-                with contextlib.suppress(ErreurDlna, asyncio.TimeoutError):
-                    async with asyncio.timeout(self.cadence.arret_s):
-                        await self.lecteur.arreter()
+            await self._arreter_montee()
+            await self._apres_annulation(code)
         except Exception as e:
             self._log(logging.ERROR, "erreur inattendue : %r", e)
             self.journal.exception("séance de l'alarme %s", self.ident)
-            code = f"erreur:{type(e).__name__}"
-        finally:
-            if self._tache_montee is not None:
-                self._tache_montee.cancel()
-                with contextlib.suppress(asyncio.CancelledError):
-                    await self._tache_montee
-            self.etat = "finie"
+            code, anormale = f"erreur:{type(e).__name__}", True
+        await self._arreter_montee()
+        if anormale and self.allume:
+            # L'ampli a été allumé pour rien : on le rend à la veille.
+            await self._stop()
+            await self._veille()
+        self.etat = "finie"
         self.resultat = code[: alarmes.RESULTAT_MAX]
         self._log(logging.INFO, "finie : %s (%d piste(s) jouée(s))", self.resultat, self.jouees)
         return self.resultat
+
+    async def _arreter_montee(self) -> None:
+        if self._tache_montee is not None:
+            self._tache_montee.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._tache_montee
+
+    async def _stop(self, delai: float | None = None) -> None:
+        """`Stop` UPnP, si la séance a posé une piste ; jamais bloquant."""
+        if not self.uri_posee:
+            return
+        try:
+            async with asyncio.timeout(delai or self.cadence.arret_s):
+                await self.lecteur.arreter()
+        except (ErreurDlna, TimeoutError) as e:
+            self._log(logging.INFO, "Stop : %s", e)
+
+    async def _apres_annulation(self, motif: str) -> None:
+        """`arretee` : la musique s'arrête, l'ampli reste allumé.
+        `plugin_desactive` (désactivation, redémarrage) : de son mieux,
+        `Stop` puis `PWSTANDBY` si le lien répond encore. `remplacee` : rien,
+        la séance suivante prend la main."""
+        if motif == "arretee":
+            await self._stop()
+        elif motif == "plugin_desactive":
+            await self._stop(min(self.cadence.arret_s, 2.0))
+            if self.allume and self.lien.connecte:
+                await self._veille()
 
     async def _derouler(self) -> str:
         a, p = self.alarme, self.pilote
@@ -282,6 +346,7 @@ class Seance:
         depart = a["volume_cible_db"] if a["montee_s"] == 0 else a["volume_depart_db"]
         try:
             await self.lien.envoyer(p.alimentation(True))
+            self.allume = True
             await self._volume(depart)
             if p.source_reseau:
                 await self.lien.envoyer(p.source_reseau)
@@ -295,7 +360,8 @@ class Seance:
             if p.source_reseau:
                 await self.lien.envoyer(p.source_reseau)
 
-        await self._lancer_lecture()
+        if (raison := await self._demarrer(self.courante)) is not None:
+            raise Echec("lecture_impossible", raison)
         self.etat = "lecture"
         await self._marquer(self.courante)
         await self._mettre_en_attente()
@@ -309,26 +375,37 @@ class Seance:
         self._envoyes.append(lire_volume(commande[2:]))
         await self.lien.envoyer(commande)
 
-    async def _lancer_lecture(self) -> None:
+    async def _demarrer(self, piste: Piste) -> str | None:
+        """`SetAVTransportURI` puis `Play` jusqu'à `PLAYING`, `essais_play`
+        fois au plus ; None si la piste joue, sinon la raison."""
         derniere = ""
         n = self.cadence.essais_play
         for essai in range(1, n + 1):
             try:
-                await self.lecteur.definir_uri(self.courante.flux)
-                # Le début de la piste, au plus tôt : une réponse lente ne
-                # doit pas faire prendre une fin de piste pour un Stop.
-                self._debut_piste = time.monotonic()
+                self.uri_posee = True
+                await self.lecteur.definir_uri(piste.flux)
+                self._nouvelle_piste()
                 await self.lecteur.jouer()
                 if await self._attendre_lecture():
-                    self._log(logging.INFO, "lecture lancée (essai %d/%d) : piste %s", essai, n, self.courante.id)
-                    return
+                    self._log(logging.INFO, "lecture lancée (essai %d/%d) : piste %s", essai, n, piste.id)
+                    return None
                 derniere = "le lecteur n'est pas passé en lecture"
             except ErreurDlna as e:
                 derniere = str(e)
             self._log(logging.INFO, "essai %d/%d de lecture raté : %s", essai, n, derniere)
             if essai < n:
                 await asyncio.sleep(self.cadence.suivi_s)
-        raise Echec("lecture_impossible", derniere)
+        return derniere
+
+    def _nouvelle_piste(self, position: float = 0.0, avant: float | None = None) -> None:
+        """L'URI vient de changer. Le début de la piste se date au plus tôt :
+        une réponse lente ne doit pas faire prendre une fin pour un Stop."""
+        maintenant = time.monotonic()
+        self._debut_piste = (avant or maintenant) - position
+        self._changement = maintenant
+        self._duree_piste = None
+        self._dernier_reltime = None
+        self._reltime_avance = False
 
     async def _attendre_lecture(self) -> bool:
         fin = time.monotonic() + self.cadence.attente_play_s
@@ -343,14 +420,14 @@ class Seance:
 
     async def _marquer(self, piste: Piste) -> None:
         try:
-            await self.ctx.marquer_jouee(piste.id)
+            await self._base(self.ctx.marquer_jouee(piste.id))
         except Exception as e:  # piste supprimée entre-temps, plugin désactivé
             self._log(logging.WARNING, "marquer_jouee(%s) : %s", piste.id, e)
         self.jouees += 1
 
     async def _mettre_en_attente(self) -> None:
         if self.suivante is None:
-            self.suivante = await self._prochaine()
+            self.suivante = await self._prochaine_sure()
             self._suivante_posee = False
         if self.suivante is None or self.repli or self._suivante_posee:
             return
@@ -373,10 +450,10 @@ class Seance:
                 reste = (self.fin_prevue - self.maintenant()).total_seconds()
                 if reste <= 0:
                     self._log(logging.INFO, "durée atteinte : Stop puis veille")
-                    with contextlib.suppress(ErreurDlna):
-                        await self.lecteur.arreter()
+                    if not self._upnp_perdu:
+                        await self._stop()
                     await self._veille()
-                    return "joue"
+                    return "ampli_injoignable" if self._upnp_perdu else "joue"
                 attente = min(attente, reste)
             await asyncio.sleep(attente)
             if motif := self._reprise_telnet():
@@ -389,21 +466,34 @@ class Seance:
                 echecs += 1
                 self._log(logging.INFO, "suivi raté (%d/%d) : %s", echecs, c.echecs_suivi_max, e)
                 if echecs >= c.echecs_suivi_max:
-                    return "ampli_injoignable"
+                    if self.alarme["fin_mode"] != "duree":
+                        return "ampli_injoignable"
+                    # En `duree`, on sonde encore : à l'échéance, la veille
+                    # part par telnet si le lien répond.
+                    if not self._upnp_perdu:
+                        self._log(logging.WARNING, "UPnP perdu ; veille par telnet à l'échéance")
+                    self._upnp_perdu = True
                 continue
             echecs = 0
+            self._upnp_perdu = False
 
             uri = pos.uri
             if self.suivante and uri and meme_piste(uri, self.suivante.flux.url) and not meme_piste(uri, self.courante.flux.url):
                 self._log(logging.INFO, "enchaîné sur la piste %s", self.suivante.id)
-                self._debut_piste = avant - (pos.temps_s or 0.0)
+                self._nouvelle_piste(pos.temps_s or 0.0, avant)
                 await self._avancer()
             elif uri and not meme_piste(uri, self.courante.flux.url):
                 return self._reprise(f"le lecteur joue autre chose ({uri})")
 
             if etat in ("PLAYING", "TRANSITIONING"):
                 if etat == "PLAYING" and (t := pos.temps_s) is not None:
-                    self._debut_piste = avant - t
+                    # Vers plus tôt seulement : GetTransportInfo et
+                    # GetPositionInfo ne sont pas lus au même instant, et un
+                    # RelTime remis à 0 par la fin de piste entre les deux
+                    # ferait prendre cette fin pour un Stop venu d'ailleurs.
+                    self._debut_piste = min(self._debut_piste, avant - t)
+                    self._reltime_avance = self._dernier_reltime is not None and t > self._dernier_reltime
+                    self._dernier_reltime = t
                 if pos.duree_s:
                     self._duree_piste = pos.duree_s
                 if not self._suivante_posee:
@@ -413,38 +503,46 @@ class Seance:
                 return self._reprise("mise en pause depuis ailleurs")
             if etat not in ("STOPPED", "NO_MEDIA_PRESENT"):
                 continue
+            if time.monotonic() - self._changement < c.attente_play_s:
+                continue  # l'URI vient de changer : l'ampli passe par STOPPED
             # Fin de piste ou Stop venu d'ailleurs : le temps écoulé depuis le
-            # début de la piste (recalé sur chaque `RelTime` lu) le dit.
+            # début de la piste (recalé sur chaque `RelTime` lu) le dit. Sans
+            # durée, un RelTime qui avançait encore dit un Stop d'ailleurs.
             d = self._duree_piste or self.courante.flux.duree
             if d is not None and time.monotonic() - self._debut_piste < d - marge:
                 return self._reprise("arrêtée depuis ailleurs")
-            if self.suivante is None:
+            if d is None and self._reltime_avance:
+                return self._reprise("arrêtée depuis ailleurs (durée inconnue)")
+            if self.suivante is None or not await self._repli():
                 if self.alarme["fin_mode"] == "sans_limite":
                     return "pistes_epuisees"
                 self._log(logging.INFO, "dernière piste jouée : veille")
                 await self._veille()
                 return "joue"
-            await self._repli()
 
     async def _avancer(self) -> None:
         self.courante, self.suivante, self._suivante_posee = self.suivante, None, False
-        self._duree_piste = None
         await self._marquer(self.courante)
         await self._mettre_en_attente()
 
-    async def _repli(self) -> None:
+    async def _repli(self) -> bool:
+        """La suivante, lancée à la main. Une piste qui ne démarre pas est
+        sautée (ce n'est pas une reprise de la main) ; faux s'il n'y a plus
+        rien à jouer."""
         if not self.repli:
             self.repli = True
             self._log(logging.WARNING, "l'ampli n'a pas enchaîné : repli sur SetAVTransportURI")
-        try:
-            await self.lecteur.definir_uri(self.suivante.flux)
-            debut = time.monotonic()
-            await self.lecteur.jouer()
-        except ErreurDlna as e:
-            raise Echec("lecture_impossible", f"repli : {e}") from None
-        self._log(logging.INFO, "repli : piste %s lancée", self.suivante.id)
-        self._debut_piste = debut
-        await self._avancer()
+        while self.suivante is not None:
+            piste = self.suivante
+            raison = await self._demarrer(piste)
+            if raison is None:
+                self._log(logging.INFO, "repli : piste %s lancée", piste.id)
+                await self._avancer()
+                return True
+            self._sauter(piste.id, "lecture_refusee", raison)
+            self.suivante = await self._prochaine_sure()
+            self._suivante_posee = False
+        return False
 
     def _reprise_telnet(self) -> str | None:
         etat = self.lien.etat
@@ -465,9 +563,10 @@ class Seance:
 
     async def _veille(self) -> None:
         try:
-            await self.lien.envoyer(self.pilote.alimentation(False))
-        except Injoignable as e:
-            self._log(logging.WARNING, "mise en veille impossible : %s", e)
+            async with asyncio.timeout(self.cadence.arret_s):
+                await self.lien.envoyer(self.pilote.alimentation(False))
+        except (Injoignable, TimeoutError) as e:
+            self._log(logging.WARNING, "mise en veille impossible : %r", e)
 
     async def _monter(self) -> None:
         """Le volume suit une droite du départ à la cible, arrondie au pas.
@@ -497,13 +596,15 @@ class Seance:
         self.montee = "finie"
 
     def _volume_touche(self) -> bool:
-        """L'ampli a poussé un volume que nous n'avons pas envoyé. On ne juge
+        """L'ampli a poussé un volume qui n'est ni notre dernier pas ni
+        l'avant-dernier (son écho peut être encore en route). Une baisse à la
+        télécommande repasse par nos pas d'avant : elle compte. On ne juge
         qu'après avoir vu l'écho d'un de nos pas : avant, l'état peut garder
         le volume d'avant la séance."""
         v = self.lien.etat["volume"]
         if v is None:
             return False
-        if any(abs(v - e) < 0.05 for e in self._envoyes):
+        if any(abs(v - e) < 0.05 for e in self._envoyes[-2:]):
             self._echo_vu = True
             return False
         return self._echo_vu
@@ -560,6 +661,7 @@ class Seances:
         self._tache: asyncio.Task | None = None
         self._verrou = asyncio.Lock()
         self._ferme = False
+        self.en_vol: set[asyncio.Future] = set()  # écritures et appels en base, protégés de l'annulation
 
     @property
     def en_cours(self) -> bool:
@@ -580,7 +682,7 @@ class Seances:
         if self._ferme:
             return "plugin_desactive"
         seance = Seance(alarme, self.ctx, self.lien, self.lecteur, delai_reveil_s=self.delai(),
-                        cadence=self.cadence, journal=self.journal, maintenant=self.maintenant)
+                        cadence=self.cadence, journal=self.journal, maintenant=self.maintenant, en_vol=self.en_vol)
         try:
             await seance.preparer()
         except Echec as e:
@@ -595,6 +697,8 @@ class Seances:
             if self._ferme:
                 return "plugin_desactive"
             await self._arreter("remplacee")
+            if self._ferme:  # désactivé pendant que l'autre s'arrêtait
+                return "plugin_desactive"
             if ecrire:
                 await self._noter(alarme["id"], "en_cours")
             self.courante = seance
@@ -612,11 +716,16 @@ class Seances:
         self.derniere = seance.vue(self.fuseau())
         if self.courante is seance:
             self.courante = None
-        await self._noter(seance.ident, code)
         if self.ordonnanceur is not None:
             self.ordonnanceur.resultat_tardif(seance.ident, code)
+        await self._noter(seance.ident, code)
 
     async def _noter(self, ident: int, code: str) -> None:
+        """Écrit le résultat ; une annulation tardive (désactivation, arrêt)
+        n'interrompt pas l'écriture, protégée par `shield`."""
+        await asyncio.shield(_en_vol(self.en_vol, self._ecrire(ident, code)))
+
+    async def _ecrire(self, ident: int, code: str) -> None:
         try:
             async with asyncio.timeout(self.cadence.arret_s):
                 async with self.session() as s:
@@ -648,17 +757,33 @@ class Seances:
             "derniere": self.derniere,
         }
 
-    async def tourner(self) -> None:
-        """La tâche de fond : rien à faire qu'attendre la désactivation, puis
-        ne rien laisser derrière (séance, client HTTP)."""
+    async def tourner(self, lien: Callable[[], Awaitable] | None = None) -> None:
+        """La tâche de fond. `lien` (`Lien.tourner`) tourne ici, en tâche
+        fille : à la désactivation, la séance s'arrête **avant** que le lien
+        ne meure, pour pouvoir encore mettre l'ampli en veille. Rien ne reste
+        derrière (séance, écritures, lien, client HTTP)."""
+        enfant = asyncio.create_task(lien(), name="denon:lien") if lien else None
         try:
-            await asyncio.Event().wait()
+            if enfant is not None:
+                # `wait`, pas `await enfant` : annuler ce superviseur
+                # annulerait sinon le lien tout de suite.
+                await asyncio.wait({enfant})
+                enfant.result()  # le lien ne meurt jamais seul : une panne remonte
+            else:
+                await asyncio.Event().wait()
         finally:
             self._ferme = True
-            tache = self._tache
-            if tache is not None and not tache.done():
-                if self.courante is not None:
-                    self.courante.motif_arret = "plugin_desactive"
-                tache.cancel()
-                await asyncio.wait({tache}, timeout=2 * self.cadence.arret_s)
-            await self.lecteur.fermer()
+            try:
+                tache = self._tache
+                if tache is not None and not tache.done():
+                    if self.courante is not None:
+                        self.courante.motif_arret = "plugin_desactive"
+                    tache.cancel()
+                    await asyncio.wait({tache}, timeout=2 * self.cadence.arret_s)
+                if self.en_vol:
+                    await asyncio.wait(set(self.en_vol), timeout=self.cadence.arret_s)
+            finally:
+                if enfant is not None:
+                    enfant.cancel()
+                    await asyncio.gather(enfant, return_exceptions=True)
+                await self.lecteur.fermer()
