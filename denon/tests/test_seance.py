@@ -9,7 +9,8 @@
 
 import asyncio
 import contextlib
-from dataclasses import dataclass
+import time as chrono
+from dataclasses import dataclass, replace
 
 import pytest
 import pytest_asyncio
@@ -25,7 +26,7 @@ from denon.tests.aides import attendre, port_libre
 from denon.tests.aides_reveil import PARIS, Horloge, a_paris, alarme, relire
 
 CADENCE = Cadence(suivi_s=0.1, minute_s=1.0, attente_lien_s=0.5, essais_play=3, attente_play_s=0.5,
-                  arret_s=1.0, marge_fin_s=0.3)
+                  arret_s=1.0, marge_fin_s=0.3, budget_arret_s=2.0)
 
 
 def contexte():
@@ -575,6 +576,34 @@ async def test_la_fin_du_superviseur_arrete_la_seance_et_ferme_tout(banc, adress
     await attendre(lambda: b.dmr.ouvertes == 0)
     assert not [t for t in asyncio.all_tasks() if t.get_name().startswith("denon:seance")]
     await attendre(lambda: not b.seances.en_vol, delai=5)  # rien d'écrit après le test
+
+
+async def test_l_arret_d_unisson_tient_sous_8_s_meme_si_rien_ne_repond(banc, adresse, pistes):
+    """Le cœur (≥ 0.5, #1068) n'accorde que 10 s aux tâches des plugins à
+    l'arrêt. Avec les bornes d'arrêt de production, un lecteur qui ne répond
+    plus (Stop pendu) et un lien bouché (la veille attend son créneau),
+    `tourner` rend la main en moins de 8 s après l'annulation."""
+    b = await banc(replace(CADENCE, arret_s=5.0, stop_arret_s=1.5, veille_arret_s=2.0, budget_arret_s=6.0, fermeture_s=0.5))
+    await b.lancer(fin_mode="sans_limite", fin_valeur=None, montee_s=0)
+    await attendre(lambda: b.dmr.etat == "PLAYING")
+    # Le lecteur se tait : toute requête SOAP attend une minute.
+    b.dmr.attente = 60.0
+    # Le lien se bouche : une commande part, et la suivante (la veille)
+    # attend un créneau de 60 s, comme avec un ampli qui sature.
+    b.lien.config = Config("127.0.0.1", b.ampli.port, 60.0)
+    bouchon = asyncio.create_task(b.lien.envoyer("PW?"))
+    await attendre(lambda: bouchon.done())
+
+    debut = chrono.monotonic()
+    b.superviseur.cancel()
+    await asyncio.gather(b.superviseur, return_exceptions=True)
+    duree = chrono.monotonic() - debut
+    assert duree < 8.0, duree
+    # Les deux gestes ont été tentés, chacun dans sa borne (1,5 s + 2 s).
+    assert duree >= 3.0, duree
+    assert "Stop" in [r.action for r in b.dmr.soaps]
+    assert "PWSTANDBY" not in b.telnet()
+    assert not b.seances.en_cours
 
 
 async def test_le_resultat_s_ecrit_meme_annule_pendant_l_ecriture(banc, adresse, pistes, db_session, table):

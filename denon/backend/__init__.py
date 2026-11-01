@@ -68,7 +68,7 @@ def enregistrer(ctx: Contexte) -> None:
     seances = Seances(ctx, lien, lecteur, ctx.session, fuseau=fuseau, delai_reveil_s=delai_reveil,
                       ordonnanceur=ordonnanceur, journal=ctx.journal)
     ordonnanceur.declencher = seances.declencher
-    ctx.routeur(reveil.fabriquer(ordonnanceur, ctx.session, fuseau, lambda: ctx.secret("jeton"),
+    ctx.routeur(reveil.fabriquer(ordonnanceur, ctx.session, fuseau,
                                  seances=seances, adresse_reseau=ctx.adresse_reseau))
     ctx.tache(ordonnanceur.tourner)
     # Le lien tourne sous la séance : à la désactivation, elle met l'ampli

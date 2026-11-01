@@ -10,7 +10,7 @@ import asyncio
 import time as chrono
 
 from denon.tests.aides import attendre
-from denon.tests.aides_reveil import AUTH, JETON, RACINE, alarme, lire_alarme, regler
+from denon.tests.aides_reveil import AUTH, JETON, LOCAL, RACINE, alarme, lire_alarme, regler
 
 
 async def activer(client, faux_ampli, dmr, denon_installe):
@@ -37,12 +37,17 @@ async def seance_en_lecture(client, delai: float = 8) -> dict:
         await asyncio.sleep(0.05)
 
 
-async def test_le_jeton_est_exige(client, faux_ampli, dmr, denon_installe):
+async def test_la_meme_origine_est_exigee(client, faux_ampli, dmr, denon_installe):
+    """Un jeton est réglé (comme en production) : l'admin passe sans lui, une
+    page d'un autre site est refusée sur les écritures."""
     await activer(client, faux_ampli, dmr, denon_installe)
-    for methode, chemin in (("POST", "/alarmes/1/essayer"), ("GET", "/seance"), ("POST", "/seance/arreter"),
-                            ("GET", "/diagnostic")):
-        r = await client.request(methode, RACINE + chemin)
-        assert r.status_code == 401, (methode, chemin)
+    autre = {"Host": "localhost", "Origin": "http://evil.example"}
+    for chemin in ("/alarmes/1/essayer", "/seance/arreter"):
+        r = await client.post(RACINE + chemin, headers=autre)
+        assert r.status_code == 403, (chemin, r.text)
+    for methode, chemin in (("GET", "/seance"), ("POST", "/seance/arreter"), ("GET", "/diagnostic")):
+        r = await client.request(methode, RACINE + chemin, headers=LOCAL)
+        assert r.status_code == 200, (methode, chemin, r.text)
 
 
 async def test_essayer_suivre_puis_arreter(client, faux_ampli, dmr, denon_installe, adresse, pistes):

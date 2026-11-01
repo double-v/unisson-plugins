@@ -109,7 +109,7 @@ async def denon_installe(tmp_path, monkeypatch):
 
     await _retirer_schema()
     monkeypatch.setattr(settings, "plugins_dir", tmp_path)
-    shutil.copytree(PLUGIN, tmp_path / "denon", ignore=shutil.ignore_patterns("tests", "__pycache__"))
+    shutil.copytree(PLUGIN, tmp_path / "denon", ignore=shutil.ignore_patterns("tests", "__pycache__", "node_modules"))
     await chargeur.charger(app)
 
     async def activer():

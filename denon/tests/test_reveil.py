@@ -20,7 +20,7 @@ from denon.backend import alarmes
 from denon.backend.ordonnanceur import Ordonnanceur
 from denon.tests.aides import attendre
 from denon.tests.aides_reveil import (
-    AUTH, PARIS, RACINE, UTC, Horloge, a_paris, alarme, dans, lire_alarme, ordonnanceur, poser, regler, relire,
+    AUTH, LOCAL, PARIS, RACINE, UTC, Horloge, a_paris, alarme, dans, lire_alarme, ordonnanceur, poser, regler, relire,
 )
 
 
@@ -123,16 +123,46 @@ async def test_le_contexte_doit_exister(reveil, sample_data, db_session):
 # ── les routes ──────────────────────────────────────────────────────────
 
 
-async def test_le_jeton_est_exige(reveil):
-    for methode, chemin in (
-        ("GET", "/alarmes"), ("POST", "/alarmes"), ("PUT", "/alarmes/1"), ("DELETE", "/alarmes/1"),
-        ("POST", "/tester"), ("GET", "/tester/1"), ("GET", "/horloge"),
+AUTRE_SITE = {"Host": "localhost", "Origin": "http://evil.example"}
+ECRITURES = (("POST", "/alarmes"), ("PUT", "/alarmes/1"), ("DELETE", "/alarmes/1"), ("POST", "/tester"))
+
+
+async def test_l_admin_passe_sans_jeton_meme_si_un_jeton_est_regle(reveil):
+    """Le jeton (réglé par la fixture) est celui de l'API de denon-api :
+    l'admin, de même origine et sans `Authorization`, se sert du réveil."""
+    r = await reveil.post(f"{RACINE}/alarmes", json=alarme(), headers=LOCAL)
+    assert r.status_code == 201, r.text
+    ident = r.json()["id"]
+    for methode, chemin, statut in (
+        ("GET", "/alarmes", 200), ("GET", "/horloge", 200), ("PUT", f"/alarmes/{ident}", 200),
+        ("POST", "/tester", 201), ("DELETE", f"/alarmes/{ident}", 204),
     ):
-        r = await reveil.request(methode, RACINE + chemin, json={})
+        corps = {"dans_s": 10} if chemin == "/tester" else {"nom": "Matin"} if methode == "PUT" else None
+        r = await reveil.request(methode, RACINE + chemin, json=corps, headers=LOCAL)
+        assert r.status_code == statut, (methode, chemin, r.text)
+
+
+async def test_une_page_d_un_autre_site_recoit_403(reveil):
+    for methode, chemin in ECRITURES:
+        r = await reveil.request(methode, RACINE + chemin, json=alarme(), headers=AUTRE_SITE)
+        assert r.status_code == 403, (methode, chemin, r.text)
+        # Le jeton de denon-api n'ouvre pas le réveil à une autre origine.
+        r = await reveil.request(methode, RACINE + chemin, json=alarme(), headers={**AUTRE_SITE, **AUTH})
+        assert r.status_code == 403, (methode, chemin)
+    # Un hôte qu'unisson ne sert pas (rebinding DNS) : refusé aussi.
+    r = await reveil.post(f"{RACINE}/alarmes", json=alarme(),
+                          headers={"Host": "evil.example", "Origin": "http://evil.example"})
+    assert r.status_code == 403
+    assert (await reveil.get(f"{RACINE}/alarmes", headers=LOCAL)).json()["alarmes"] == []
+
+
+async def test_l_api_de_denon_api_exige_toujours_le_jeton(reveil):
+    for methode, chemin in (("GET", "/api/state"), ("POST", "/api/power")):
+        r = await reveil.request(methode, f"/api/plugins/denon{chemin}", json={"on": False}, headers=LOCAL)
         assert r.status_code == 401, (methode, chemin)
         assert r.json() == {"error": "unauthorized"}
-        r = await reveil.request(methode, RACINE + chemin, json={}, headers={"Authorization": "Bearer faux"})
-        assert r.status_code == 401
+    r = await reveil.get("/api/plugins/denon/api/state", headers={**LOCAL, **AUTH})
+    assert r.status_code == 200
 
 
 async def test_creer_lister_modifier_supprimer(reveil):
