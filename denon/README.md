@@ -106,7 +106,8 @@ lecteurs réseau, spec 023). Les écrans viendront au lot 5.
      4 s ; au repli, une piste qui ne démarre pas est sautée.
   8. *Fin anormale* après `PWON` (`lecture_impossible`, erreur) : `Stop`
      puis `PWSTANDBY`. En `duree`, UPnP perdu n'arrête pas la séance : la
-     veille part par telnet à l'échéance. **Désactiver le plugin** (ou
+     veille part par telnet à l'échéance ; en `pistes`, la veille part tout
+     de suite ; en `sans_limite`, pas de veille. **Désactiver le plugin** (ou
      redémarrer unisson) en pleine séance : `Stop`, puis `PWSTANDBY` si le
      lien répond encore, avant de fermer.
 

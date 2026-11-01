@@ -135,7 +135,10 @@ dans `dernier_resultat`.
   ne met jamais en veille.
 - **`duree` sans UPnP** : la séance sonde encore ; à l'échéance, `PWSTANDBY`
   part par telnet si le lien répond (résultat `ampli_injoignable`). En
-  `pistes` et `sans_limite`, UPnP perdu finit la séance sans veille.
+  `pistes`, UPnP perdu finit comme une fin normale : `PWSTANDBY` par telnet
+  si le lien répond (résultat `ampli_injoignable`). En `sans_limite`, UPnP
+  perdu finit la séance **sans** veille : ce mode ne met jamais l'ampli en
+  veille de lui-même.
 - **Après un changement d'URI**, un `STOPPED` est ignoré pendant
   `attente_play_s` (4 s) : l'ampli passe par là en changeant de piste. Au
   repli, une piste qui ne démarre pas (3 essais de `Play`) est sautée

@@ -337,6 +337,19 @@ async def test_duree_upnp_perdu_veille_par_telnet_a_l_echeance(banc, adresse, lo
     assert b.telnet()[-1] == "PWSTANDBY"
 
 
+@pytest.mark.parametrize("mode, veille", [("pistes", True), ("sans_limite", False)])
+async def test_upnp_perdu_en_pistes_veille_en_sans_limite_non(banc, adresse, longues, db_session, mode, veille):
+    b = await banc()
+    pl = await playlist(db_session, longues[:2])
+    await b.lancer(contexte="playlist", contexte_id=pl, fin_mode=mode, fin_valeur=2 if mode == "pistes" else None,
+                   montee_s=0)
+    await attendre(lambda: b.seances.courante is not None and b.seances.courante.etat == "lecture", delai=10)
+    await b.dmr.arreter()  # l'ampli ne répond plus en UPnP
+    assert await b.fin() == "ampli_injoignable"
+    assert (b.telnet()[-1] == "PWSTANDBY") is veille
+    assert ("PWSTANDBY" in b.telnet()) is veille
+
+
 async def test_la_base_qui_tombe_a_la_recharge_ne_coupe_pas_la_piste(banc, adresse, pistes, db_session):
     import backend.database as db_module
 

@@ -466,8 +466,13 @@ class Seance:
                 echecs += 1
                 self._log(logging.INFO, "suivi raté (%d/%d) : %s", echecs, c.echecs_suivi_max, e)
                 if echecs >= c.echecs_suivi_max:
-                    if self.alarme["fin_mode"] != "duree":
+                    if self.alarme["fin_mode"] == "pistes":
+                        # Comme une fin normale : la veille par telnet.
+                        self._log(logging.WARNING, "UPnP perdu : veille par telnet")
+                        await self._veille()
                         return "ampli_injoignable"
+                    if self.alarme["fin_mode"] == "sans_limite":
+                        return "ampli_injoignable"  # jamais de veille seule
                     # En `duree`, on sonde encore : à l'échéance, la veille
                     # part par telnet si le lien répond.
                     if not self._upnp_perdu:
