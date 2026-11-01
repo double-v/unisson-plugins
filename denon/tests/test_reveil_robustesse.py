@@ -37,7 +37,7 @@ async def test_un_fuseau_invalide_a_chaud_ne_bloque_pas_le_reveil(reveil, invali
     await regler(reveil, fuseau=invalide)
 
     debut = chrono.monotonic()
-    while (a := await lire_alarme(reveil, ident))["dernier_resultat"] != "declenchee":
+    while (a := await lire_alarme(reveil, ident))["dernier_resultat"] != "adresse_reseau_non_reglee":
         assert chrono.monotonic() - debut < 5, "le réveil est bloqué par le fuseau"
         await asyncio.sleep(0.05)
 

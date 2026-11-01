@@ -47,8 +47,9 @@ Table `plugin_denon.alarmes` (migration du plugin, dans son schéma) :
 
 Une alarme à `jours = 0` se désactive après son passage.
 
-Réglages ajoutés au plugin : `fuseau` (défaut `Europe/Paris`) et
-`hote_upnp` (vide : l'hôte telnet, port 8080).
+Réglages ajoutés au plugin : `fuseau` (défaut `Europe/Paris`),
+`hote_upnp` (vide : l'hôte telnet, port 8080) et `delai_reveil_s` (vide :
+celui du pilote).
 
 ## Le déclenchement
 
@@ -102,6 +103,30 @@ remplace.
 
 Chaque étape est journalisée (`unisson.plugin.denon`), et le résultat va
 dans `dernier_resultat`.
+
+### Ce que le lot 4 a tranché là où la conception était muette
+
+- **Préparer avant d'allumer** : l'adresse réseau, le lien telnet, les
+  formats, les pistes et le flux de la première se vérifient avant `PWON`.
+  Une alarme qui ne peut pas jouer ne réveille pas l'ampli (ni la maison).
+- **Volume et source renvoyés** après `delai_reveil_s` : un `MV` ou un `SI`
+  envoyé pendant la sortie de veille a pu se perdre (à vérifier en R0).
+- **Une alarme qui ne peut pas partir ne remplace pas** la séance en cours :
+  la musique qui joue continue.
+- **`duree` recharge aussi** des lots de 50 : une heure de musique dépasse
+  souvent 50 pistes courtes, pas seulement en `sans_limite`.
+- **Fin de piste ou `Stop` d'ailleurs** : on compare le temps joué (recalé
+  sur chaque `RelTime`) à la durée, avec une marge de 1,5 × le suivi + 1 s
+  (4 s). Un `Stop` dans les 4 dernières secondes passe pour une fin de
+  piste ; une durée inconnue aussi.
+- **Reprise de la main** élargie : un autre média dans `TrackURI`, et une
+  mise en veille (`PWSTANDBY` poussé), arrêtent aussi la séance.
+- **`arreter`** envoie `Stop` (la musique s'arrête), jamais `PWSTANDBY`.
+- **Le résultat** : la séance l'écrit elle-même à la fin ; l'accroche de
+  l'ordonnanceur rend None pour ne pas écraser un résultat déjà écrit, et
+  le résumé d'une alarme de test le reprend (`resultat_tardif`).
+- **Réglage `delai_reveil_s`** (vide : le pilote) : la mesure de R0 se pose
+  sans nouvelle version.
 
 ## Le testeur de fuseau (demande de l'opérateur)
 

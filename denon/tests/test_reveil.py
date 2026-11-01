@@ -269,8 +269,9 @@ async def test_une_ecriture_reveille_l_ordonnanceur(reveil):
     r = await reveil.post(f"{RACINE}/alarmes", json=alarme(heure=heure, jours=127), headers=AUTH)
     ident = r.json()["id"]
     debut = chrono.monotonic()
-    # Le départ est noté (`en_cours`) avant l'accroche, son résultat après.
-    while (a := await lire_alarme(reveil, ident))["dernier_resultat"] != "declenchee":
+    # Le départ est noté (`en_cours`) avant l'accroche, son résultat après :
+    # sans adresse réseau, la séance ne part pas, et le dit.
+    while (a := await lire_alarme(reveil, ident))["dernier_resultat"] != "adresse_reseau_non_reglee":
         assert chrono.monotonic() - debut < 5, "l'ordonnanceur ne s'est pas réveillé"
         await asyncio.sleep(0.05)
     assert a["derniere_execution"] is not None and a["dernier_retard_ms"] < 1000
@@ -314,10 +315,15 @@ async def test_le_testeur_part_dans_cinq_secondes(reveil):
         assert chrono.monotonic() - debut < 9
         await asyncio.sleep(0.02)
     ecoule = chrono.monotonic() - debut
+    # Partie (`en_cours`), puis son résultat, écrit quand l'accroche rend la main.
+    while res["dernier_resultat"] == "en_cours":
+        assert chrono.monotonic() - debut < 10
+        await asyncio.sleep(0.02)
+        res = (await reveil.get(f"{RACINE}/tester/{test['id']}", headers=AUTH)).json()
     # Échéance arrondie à la seconde suivante (5 à 6 s), puis jusqu'à 1 s de
     # retard toléré : la précision elle-même se juge sur `retard_ms`.
     assert 5 <= ecoule <= 7.5, ecoule
-    assert res["etat"] == "partie" and res["dernier_resultat"] == "declenchee"
+    assert res["etat"] == "partie" and res["dernier_resultat"] == "adresse_reseau_non_reglee"
     assert res["echeance"] == corps["echeance"]
     assert 0 <= res["retard_ms"] < 1000
     ecart = datetime.fromisoformat(res["depart"]) - echeance  # rendus à la milliseconde près

@@ -1,9 +1,9 @@
 id = "denon"
 nom = "Denon"
-version = "0.2.0"
+version = "0.3.0"
 description = "Partage l'ampli Denon (une seule connexion telnet) entre unisson, Hublot et les autres : l'API de denon-api, sans conteneur à part."
 categorie = "officiel"
-coeur = ">=0.4"             # [cles_heritees] (0.4) ; migrations dans plugin_denon (0.3)
+coeur = ">=0.5"             # la séance : flux_lecteur, tirer_pistes, marquer_jouee… (0.5) ; cles_heritees (0.4) ; plugin_denon (0.3)
 actif_par_defaut = false
 
 [apporte]
@@ -43,6 +43,14 @@ defaut = 0                  # 8100 : l'adresse de denon-api, pour Hublot ; 0 : p
 cle = "fuseau"
 type = "str"
 defaut = "Europe/Paris"     # l'heure des alarmes est une heure locale ; nom IANA
+
+[[reglages]]
+cle = "hote_upnp"
+type = "str"                # hôte UPnP de l'ampli (description sur le port 8080), ou l'URL de description.xml ; vide : l'hôte telnet
+
+[[reglages]]
+cle = "delai_reveil_s"
+type = "str"                # secondes entre PWON et le premier Play ; vide : celui du pilote (8 s sur l'AVR-X4000, à confirmer en R0)
 
 [cles_heritees]
 denon_host = "hote"
