@@ -297,7 +297,6 @@ class Seance:
 
         await self._lancer_lecture()
         self.etat = "lecture"
-        self._debut_piste = time.monotonic()
         await self._marquer(self.courante)
         await self._mettre_en_attente()
         if a["montee_s"] > 0 and a["volume_depart_db"] != a["volume_cible_db"]:
@@ -316,6 +315,9 @@ class Seance:
         for essai in range(1, n + 1):
             try:
                 await self.lecteur.definir_uri(self.courante.flux)
+                # Le début de la piste, au plus tôt : une réponse lente ne
+                # doit pas faire prendre une fin de piste pour un Stop.
+                self._debut_piste = time.monotonic()
                 await self.lecteur.jouer()
                 if await self._attendre_lecture():
                     self._log(logging.INFO, "lecture lancée (essai %d/%d) : piste %s", essai, n, self.courante.id)
@@ -381,6 +383,7 @@ class Seance:
                 return self._reprise(motif)
             try:
                 etat = (await self.lecteur.etat()).etat
+                avant = time.monotonic()  # RelTime est lu après : début au plus tôt
                 pos = await self.lecteur.position()
             except ErreurDlna as e:
                 echecs += 1
@@ -393,14 +396,14 @@ class Seance:
             uri = pos.uri
             if self.suivante and uri and meme_piste(uri, self.suivante.flux.url) and not meme_piste(uri, self.courante.flux.url):
                 self._log(logging.INFO, "enchaîné sur la piste %s", self.suivante.id)
-                self._debut_piste = time.monotonic() - (pos.temps_s or 0.0)
+                self._debut_piste = avant - (pos.temps_s or 0.0)
                 await self._avancer()
             elif uri and not meme_piste(uri, self.courante.flux.url):
                 return self._reprise(f"le lecteur joue autre chose ({uri})")
 
             if etat in ("PLAYING", "TRANSITIONING"):
                 if etat == "PLAYING" and (t := pos.temps_s) is not None:
-                    self._debut_piste = time.monotonic() - t
+                    self._debut_piste = avant - t
                 if pos.duree_s:
                     self._duree_piste = pos.duree_s
                 if not self._suivante_posee:
@@ -435,11 +438,12 @@ class Seance:
             self._log(logging.WARNING, "l'ampli n'a pas enchaîné : repli sur SetAVTransportURI")
         try:
             await self.lecteur.definir_uri(self.suivante.flux)
+            debut = time.monotonic()
             await self.lecteur.jouer()
         except ErreurDlna as e:
             raise Echec("lecture_impossible", f"repli : {e}") from None
         self._log(logging.INFO, "repli : piste %s lancée", self.suivante.id)
-        self._debut_piste = time.monotonic()
+        self._debut_piste = debut
         await self._avancer()
 
     def _reprise_telnet(self) -> str | None:
