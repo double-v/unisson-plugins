@@ -2,7 +2,8 @@
 
 Les réponses viennent de l'AVR-X4000 (`fixtures/avrx4000/`, capturées en
 lecture seule : `description.xml`, `GetProtocolInfo`, `GetTransportInfo`,
-`GetPositionInfo` et une faute 718 ; numéro de série et UDN effacés). Le faux
+`GetPositionInfo`, `GetMediaInfo` (mal formé) et une faute 718 ; numéro de
+série et UDN effacés). Le faux
 lecteur vérifie le `SOAPACTION` de chaque requête contre l'action du corps.
 """
 
@@ -13,10 +14,14 @@ import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from pathlib import Path
 
+import httpx
 import pytest
 
 from denon.backend.dlna import (
     DelaiDepasse,
+    champ,
+    entites_xml,
+    meme_piste,
     ErreurUpnp,
     LecteurDlna,
     LecteurInjoignable,
@@ -82,12 +87,14 @@ class FauxLecteur:
             ("/ConnectionManager/ctrl", "GetProtocolInfo"): (200, fixture("GetProtocolInfo.xml")),
             ("/AVTransport/ctrl", "GetTransportInfo"): (200, fixture("GetTransportInfo.xml")),
             ("/AVTransport/ctrl", "GetPositionInfo"): (200, fixture("GetPositionInfo.xml")),
+            ("/AVTransport/ctrl", "GetMediaInfo"): (200, fixture("GetMediaInfo.xml")),
         }
         for action in ("SetAVTransportURI", "SetNextAVTransportURI", "Play", "Pause", "Stop"):
             self.reponses[("/AVTransport/ctrl", action)] = (200, reponse_vide(action))
         self.requetes: list[Requete] = []
         self.refus: list[str] = []
         self.attente = 0.0  # avant de répondre, pour les délais
+        self.attentes: dict[str, float] = {}  # par méthode HTTP (« GET », « POST »)
         self.serveur = None
         self.port = 0
 
@@ -124,8 +131,8 @@ class FauxLecteur:
                         entetes[k.strip().lower()] = v.strip()
                 corps = await lecteur.readexactly(int(entetes.get("content-length", 0)))
                 statut, reponse = self._repondre(Requete(methode, chemin, entetes, corps))
-                if self.attente:
-                    await asyncio.sleep(self.attente)
+                if attente := self.attentes.get(methode, self.attente):
+                    await asyncio.sleep(attente)
                 ecrivain.write(
                     f"HTTP/1.1 {statut} X\r\nCONTENT-TYPE: text/xml; charset=\"utf-8\"\r\n"
                     f"CONTENT-LENGTH: {len(reponse)}\r\nSERVER: KnOS/3.2 UPnP/1.0 DMP/3.5\r\n\r\n".encode() + reponse
@@ -474,3 +481,166 @@ async def test_injoignable_en_cours_de_route_relit_la_description(faux_lecteur):
         faux_lecteur.serveur = await asyncio.start_server(faux_lecteur._client, "127.0.0.1", port)
         await l.etat()
     assert [r.methode for r in faux_lecteur.requetes] == ["GET", "POST", "GET", "POST"]
+
+
+# ------------------------------------------------------------------ adresses invalides
+
+
+@pytest.mark.parametrize("adresse", [
+    "http://127.0.0.1:80800/description.xml",  # port impossible
+    "http://[::1/description.xml",  # crochet non fermé
+    "ftp://127.0.0.1/description.xml",
+    "http:///description.xml",  # pas d'hôte
+    "description.xml",
+])
+async def test_adresse_de_description_invalide(adresse):
+    async with LecteurDlna(adresse, delai=1) as l:
+        with pytest.raises(ReponseInvalide, match="adresse invalide"):
+            await l.etat()
+
+
+async def test_url_de_controle_invalide_dans_la_description(faux_lecteur):
+    faux_lecteur.description = fixture("description.xml").replace(b"/AVTransport/ctrl", b"http://127.0.0.1:99999/avt")
+    async with LecteurDlna(f"{faux_lecteur.base}/description.xml", delai=1) as l:
+        with pytest.raises(ReponseInvalide, match="99999"):
+            await l.jouer()
+
+
+async def test_fonction_d_adresse_qui_echoue():
+    def adresse():
+        raise KeyError("hote")
+
+    async with LecteurDlna(adresse, delai=1) as l:
+        with pytest.raises(ReponseInvalide):
+            await l.protocoles()
+
+
+async def test_client_externe_ferme(faux_lecteur):
+    client = httpx.AsyncClient()
+    await client.aclose()
+    l = LecteurDlna(f"{faux_lecteur.base}/description.xml", delai=1, client=client)
+    with pytest.raises(LecteurInjoignable, match="inutilisable"):
+        await l.etat()
+
+
+# ------------------------------------------------------------------ délai par appel public
+
+
+async def test_delai_borne_description_et_soap_ensemble(faux_lecteur):
+    """La description et le POST tiennent chacun dans le délai, pas les deux
+    ensemble : l'appel public est coupé quand même."""
+    faux_lecteur.attentes = {"GET": 0.3, "POST": 0.3}
+    async with LecteurDlna(f"{faux_lecteur.base}/description.xml", delai=0.5) as l:
+        t = time.monotonic()
+        with pytest.raises(DelaiDepasse):
+            await l.definir_uri(FauxFlux())
+        assert time.monotonic() - t < 0.75
+
+
+async def test_delai_sur_le_seul_post_soap(faux_lecteur):
+    faux_lecteur.attentes = {"POST": 0.6}  # la description répond tout de suite
+    async with LecteurDlna(f"{faux_lecteur.base}/description.xml", delai=0.5) as l:
+        t = time.monotonic()
+        with pytest.raises(DelaiDepasse):
+            await l.etat()
+        assert time.monotonic() - t < 0.75
+    assert [r.methode for r in faux_lecteur.requetes] == ["GET", "POST"]
+
+
+# ------------------------------------------------------------------ GetMediaInfo
+
+
+async def test_media_de_l_avrx4000_malforme(lecteur, faux_lecteur):
+    """La réponse réelle : un NextURI qui contient un DIDL brut et tronqué, ce
+    qui n'est pas du XML bien formé. Les autres champs se lisent quand même."""
+    brut = fixture("GetMediaInfo.xml")
+    with pytest.raises(ET.ParseError):
+        ET.fromstring(brut)
+    m = await lecteur.media()
+    assert m.uri == ""
+    assert m.suivante.startswith("<DIDL-Lite") and m.suivante.endswith("<upnp:class>object")
+    texte = brut.decode()
+    assert champ(texte, "PlayMedium") == "NONE"
+    assert champ(texte, "NextURIMetaData").startswith('<DIDL-Lite xmlns:dc="http://purl.org/dc/elements/1.1/"')
+
+
+async def test_media_current_uri_distinct_de_ses_metadonnees(lecteur, faux_lecteur):
+    meta = didl(FauxFlux(url="http://h/api/flux/9/original"))
+    echappe = meta.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    corps = (
+        '<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"><s:Body>'
+        f'<u:GetMediaInfoResponse xmlns:u="{AVT}"><NrTracks>1</NrTracks>'
+        f"<CurrentURIMetaData>{echappe}</CurrentURIMetaData>"  # avant CurrentURI, exprès
+        "<CurrentURI>http://h/api/flux/9/original?a=1&amp;b=2</CurrentURI>"
+        "<NextURI></NextURI><NextURIMetaData></NextURIMetaData>"
+        "</u:GetMediaInfoResponse></s:Body></s:Envelope>"
+    )
+    faux_lecteur.reponses[("/AVTransport/ctrl", "GetMediaInfo")] = (200, corps.encode())
+    m = await lecteur.media()
+    assert (m.uri, m.suivante) == ("http://h/api/flux/9/original?a=1&b=2", "")
+    assert champ(corps, "CurrentURIMetaData") == meta
+
+
+# ------------------------------------------------------------------ champ()
+
+
+def test_champ_prefixe_d_un_namespace():
+    xml = '<u:R xmlns:u="x" xmlns:m="y"><m:Sink a="1">http-get:*:audio/flac:*</m:Sink></u:R>'
+    assert champ(xml, "Sink") == "http-get:*:audio/flac:*"
+    assert champ(xml, "Source") is None
+
+
+def test_champ_auto_fermant_ne_deborde_pas():
+    assert champ('<X a="b"/><Y>1</Y><X>2</X>', "X") == "2"
+    assert champ('<X a="b"/><Y>1</Y>', "X") == ""
+    assert champ("<X/>", "X") == ""
+
+
+def test_champ_decode_les_seules_entites_xml():
+    xml = "<A>&lt;b&gt; &amp;eacute; &eacute; &quot;&apos; &#233;&#xE9;&#X41;</A>"
+    assert champ(xml, "A") == "<b> &eacute; &eacute; \"' ééA"
+    assert entites_xml("&#99999999999;") == "&#99999999999;"
+
+
+# ------------------------------------------------------------------ secondes, meme_piste
+
+
+def test_secondes_fraction_f0_f1():
+    assert secondes("0:00:01.1/4") == 1.25
+    assert secondes("1:00:00.0/3") == 3600
+    assert secondes("0:00:01.4/4") is None and secondes("0:00:01.1/0") is None
+
+
+@pytest.mark.parametrize("a,b,egales", [
+    ("http://H.local:80/api/flux/1/original", "HTTP://h.local/api/flux/1/original", True),
+    ("http://h/api/flux/1/original?x=%7e", "http://h/api/flux/1/original?x=~", True),
+    ("http://h/a%2fb", "http://h/a%2Fb", True),
+    ("http://h/a%2Fb", "http://h/a/b", False),  # « / » réservé : pas le même chemin
+    ("http://h/api/flux/1", "http://h/api/flux/1#x", True),
+    ("http://h", "http://h/", True),
+    ("http://h/api/flux/1/Original", "http://h/api/flux/1/original", False),
+    ("http://h/api/flux/1?a=1&b=2", "http://h/api/flux/1?b=2&a=1", False),
+    ("http://h:8090/api/flux/1", "http://h/api/flux/1", False),
+    ("https://h/api/flux/1", "https://h:443/api/flux/1", True),
+    ("", "", False),
+    ("http://[::1/x", "http://[::1/x", False),
+])
+def test_meme_piste(a, b, egales):
+    assert meme_piste(a, b) is egales
+
+
+# ------------------------------------------------------------------ cas limites du DIDL
+
+
+@pytest.mark.parametrize("duree", [float("nan"), float("inf"), float("-inf")])
+def test_didl_duree_non_finie_omise(duree):
+    res = ET.fromstring(didl(FauxFlux(duree=duree))).find(f"{DIDL}item/{DIDL}res")
+    assert res.get("duration") is None
+
+
+async def test_didl_retire_les_surrogates_isoles(lecteur, faux_lecteur):
+    flux = FauxFlux(titre="a\ud800b\udfffc")
+    assert ET.fromstring(didl(flux)).find(f"{DIDL}item/{DC}title").text == "abc"
+    await lecteur.definir_uri(flux)  # la requête s'encode en UTF-8
+    (r,) = faux_lecteur.soaps
+    assert "<dc:title>abc</dc:title>" in r.arguments["CurrentURIMetaData"]
