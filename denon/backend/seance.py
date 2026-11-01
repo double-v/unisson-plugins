@@ -75,6 +75,15 @@ class Cadence:
     pas_db: float = 0.5
     echecs_suivi_max: int = 3  # lectures d'état ratées d'affilée : ampli perdu
     arret_s: float = 5.0  # borne du nettoyage quand on arrête une séance
+    # L'arrêt d'unisson (et la désactivation) : le cœur ≥ 0.5 (#1068) laisse
+    # 10 s en tout aux tâches des plugins. Le pire cas de `tourner` après
+    # l'annulation reste sous 8 s : Stop (1,5 s) et veille (2 s) dans un
+    # budget de 6 s qui couvre aussi les écritures en vol, puis 0,5 s pour
+    # le lien et 0,5 s pour le client HTTP, soit 7 s au plus.
+    stop_arret_s: float = 1.5
+    veille_arret_s: float = 2.0
+    budget_arret_s: float = 6.0
+    fermeture_s: float = 0.5
     marge_fin_s: float = 1.0  # un STOPPED à moins de 1,5 × suivi_s + ceci de la fin : fin de piste
 
 
@@ -358,9 +367,10 @@ class Seance:
         if motif in ("arretee", "lien_mort"):
             await self._stop()
         elif motif == "plugin_desactive":
-            await self._stop(min(self.cadence.arret_s, 2.0))
+            # Le temps est compté (le cœur n'attend que 10 s) : bornes courtes.
+            await self._stop(self.cadence.stop_arret_s)
             if self.allume and self.lien.connecte:
-                await self._veille()
+                await self._veille(self.cadence.veille_arret_s)
 
     async def _derouler(self) -> str:
         a, p = self.alarme, self.pilote
@@ -588,9 +598,9 @@ class Seance:
         self._log(logging.INFO, "quelqu'un reprend la main : %s", motif)
         return "reprise_en_main"
 
-    async def _veille(self) -> None:
+    async def _veille(self, delai: float | None = None) -> None:
         try:
-            async with asyncio.timeout(self.cadence.arret_s):
+            async with asyncio.timeout(delai or self.cadence.arret_s):
                 await self.lien.envoyer(self.pilote.alimentation(False))
         except (Injoignable, TimeoutError) as e:
             self._log(logging.WARNING, "mise en veille impossible : %r", e)
@@ -798,11 +808,13 @@ class Seances:
         await asyncio.wait({tache}, timeout=2 * self.cadence.arret_s)
         return True
 
-    async def _attendre_en_vol(self) -> None:
+    async def _attendre_en_vol(self, fin: float | None = None) -> None:
         """Attend les appels en base et les ménages en cours, y compris ceux
-        qui naissent pendant l'attente, sous une borne globale ; journalise
-        ceux qu'on abandonne."""
-        fin = time.monotonic() + self.cadence.arret_s
+        qui naissent pendant l'attente, sous une borne globale (`fin`, en
+        `time.monotonic()` ; par défaut `arret_s`) ; journalise ceux qu'on
+        abandonne."""
+        if fin is None:
+            fin = time.monotonic() + self.cadence.arret_s
         while self.en_vol:
             reste = fin - time.monotonic()
             if reste <= 0:
@@ -835,17 +847,27 @@ class Seances:
             else:
                 await asyncio.Event().wait()
         finally:
+            # Tout tient dans `budget_arret_s` + 2 × `fermeture_s` (7 s), sous
+            # les 10 s que le cœur accorde à l'arrêt : ce qui dépasse est
+            # abandonné (et journalisé), jamais attendu.
             self._ferme = True
+            fin = time.monotonic() + self.cadence.budget_arret_s
             try:
                 tache = self._tache
                 if tache is not None and not tache.done():
                     if self.courante is not None:
                         self.courante.motif_arret = motif
                     tache.cancel()
-                    await asyncio.wait({tache}, timeout=2 * self.cadence.arret_s)
-                await self._attendre_en_vol()
+                    await asyncio.wait({tache}, timeout=max(0.0, fin - time.monotonic()))
+                await self._attendre_en_vol(fin)
             finally:
                 if enfant is not None:
                     enfant.cancel()
-                    await asyncio.gather(enfant, return_exceptions=True)
-                await self.lecteur.fermer()
+                    await asyncio.wait({enfant}, timeout=self.cadence.fermeture_s)
+                    if enfant.done() and not enfant.cancelled():
+                        enfant.exception()  # lue : une panne du lien a déjà été remontée
+                try:
+                    async with asyncio.timeout(self.cadence.fermeture_s):
+                        await self.lecteur.fermer()
+                except TimeoutError:
+                    self.journal.warning("réveil : client UPnP non fermé dans les temps")

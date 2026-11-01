@@ -31,9 +31,10 @@
         <template #leading><Icone nom="stop" /></template>Arrêter
       </UiButton>
     </div>
+    <Note v-if="erreurArret" ton="danger" role="alert" style="grid-column: 1 / -1"><span>{{ erreurArret }}</span></Note>
   </section>
 
-  <section v-else-if="s" aria-label="Séance en cours" aria-live="polite" :style="cadre('primary')">
+  <section v-else-if="s"aria-label="Séance en cours" aria-live="polite" :style="cadre('primary')">
     <img v-if="s.piste?.pochette && !pochetteKo" :src="s.piste.pochette" alt="" :style="pochette" @error="pochetteKo = true" />
     <div v-else :style="{ ...pochette, background: degrade }" aria-hidden="true" />
     <div :style="milieu">
@@ -57,6 +58,7 @@
         <template #leading><Icone nom="stop" /></template>Arrêter
       </UiButton>
     </div>
+    <Note v-if="erreurArret" ton="danger" role="alert" style="grid-column: 1 / -1"><span>{{ erreurArret }}</span></Note>
   </section>
 </template>
 
@@ -70,7 +72,7 @@ import Note from "./Note.vue";
 import { etat } from "./etat.js";
 import { db, hm, heureDe } from "./outils.js";
 
-const props = defineProps({ annonce: { type: Object, default: null }, etroit: Boolean, arret: Boolean });
+const props = defineProps({ annonce: { type: Object, default: null }, etroit: Boolean, arret: Boolean, erreurArret: { type: String, default: "" } });
 const emit = defineEmits(["arreter", "fermer", "diagnostic"]);
 
 const s = computed(() => etat.seance);

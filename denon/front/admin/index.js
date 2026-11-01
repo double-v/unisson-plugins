@@ -88,7 +88,9 @@ class ErreurReveil extends Error {
   }
 }
 const MESSAGES = {
-  401: "Le plugin Denon a un jeton réglé, et l'admin ne l'envoie pas : les routes du réveil lui sont fermées (401).",
+  // Les routes du réveil exigent la même origine (garde du cœur ≥ 0.6) : une
+  // page servie par un autre nom d'hôte que ceux d'unisson est refusée.
+  403: "Requête refusée par unisson : cette page n'est pas servie sous une adresse qu'il reconnaît (même origine, DEDUP_ALLOWED_HOSTS) (403).",
   404: "Le plugin Denon ne répond pas : il est peut-être désactivé (404).",
   503: "Le plugin Denon ne répond pas (503)."
 };
@@ -100,7 +102,8 @@ function normaliser(e) {
   return new ErreurReveil({
     statut: r.status,
     code: d.error || "",
-    message: r.status === 401 ? MESSAGES[401] : message,
+    // Le motif du cœur (`detail`) dit quelle origine ou quel hôte est refusé.
+    message: r.status === 403 ? `${MESSAGES[403]}${typeof d.detail === "string" ? ` ${d.detail}` : ""}` : message,
     erreurs: Array.isArray(d.erreurs) ? d.erreurs : [],
     reglage: d.reglage || null
   });
@@ -367,12 +370,33 @@ async function chargerAlarmes() {
     etat.erreurListe = e;
   }
 }
-async function chargerSeance() {
+let seqSeance = 0;
+let seanceEnVol = false;
+let arretEnCours = false;
+async function chargerSeance({ force = false } = {}) {
+  if (arretEnCours || seanceEnVol && !force) return;
+  const n = ++seqSeance;
+  seanceEnVol = true;
   try {
     const r = await reveil.seance();
+    if (n !== seqSeance || arretEnCours) return;
     etat.seance = r.seance;
     etat.derniere = r.derniere;
   } catch {
+  } finally {
+    if (n === seqSeance) seanceEnVol = false;
+  }
+}
+async function arreterSeance() {
+  arretEnCours = true;
+  seqSeance += 1;
+  seanceEnVol = false;
+  try {
+    const r = await reveil.arreter();
+    etat.seance = r.seance;
+    etat.derniere = r.derniere;
+  } finally {
+    arretEnCours = false;
   }
 }
 async function chargerDiagnostic() {
@@ -388,7 +412,8 @@ async function chargerDiagnostic() {
 }
 let playlistsChargees = null;
 let genresCharges = null;
-function chargerPlaylists() {
+function chargerPlaylists({ frais = false } = {}) {
+  if (frais) playlistsChargees = null;
   playlistsChargees ?? (playlistsChargees = coeur.playlists().then((l) => {
     for (const p of l) etat.refs.playlists[p.id] = p;
     return l;
@@ -398,7 +423,8 @@ function chargerPlaylists() {
   }));
   return playlistsChargees;
 }
-function chargerGenres() {
+function chargerGenres({ frais = false } = {}) {
+  if (frais) genresCharges = null;
   genresCharges ?? (genresCharges = coeur.genres().then((l) => {
     for (const g of l) etat.refs.genres[g.id] = g;
     return l;
@@ -494,12 +520,22 @@ function suivreTest() {
       }
     } catch {
     }
-    const fini = t.etat !== "en_attente" && t.etat !== "pas_partie" && t.resultat;
-    if (!fini && (!t.retraitMs || Date.now() < t.retraitMs)) suivreTest();
+    if (!testFini(t) && Date.now() < t.echeanceMs + SUIVI_MAX_MS) suivreTest();
   }, 1e3);
 }
+const SUIVI_MAX_MS = 5 * 6e4;
+const sansResultat = (t) => !t.resultat || t.resultat === "en_cours";
+const testFini = (t) => (t.etat === "partie" || t.etat === "manquee") && !sansResultat(t);
+function reprendreSuiviTest() {
+  const t = etat.test;
+  if (t && !testFini(t) && Date.now() < t.echeanceMs + SUIVI_MAX_MS) suivreTest();
+}
+function arreterSuiviTest() {
+  clearTimeout(sondeTest);
+  sondeTest = null;
+}
 function suiteDuTest(t) {
-  if (!t || !t.resultat || t.resultat === "joue" || t.resultat === "remplacee") return "";
+  if (!t || sansResultat(t) || t.resultat === "joue" || t.resultat === "remplacee") return "";
   const muettes = ["adresse_reseau_non_reglee", "aucune_piste", "aucun_format_commun", "ampli_injoignable", "lecture_impossible"];
   const lib = resultat(t.resultat).lib.toLowerCase();
   return `mais ${lib}${muettes.includes(t.resultat) && t.resultat !== "ampli_injoignable" ? " : rien n'a joué" : ""}`;
@@ -1042,7 +1078,7 @@ const _sfc_main$4 = {
                     t.value.etat === "partie" ? (__hote$2.openBlock(), __hote$2.createElementBlock("span", {
                       key: 3,
                       style: muet
-                    }, __hote$2.toDisplayString(suite.value ? `L'heure est bonne, ${suite.value}.` : "Le fuseau et l'horloge sont bons."), 1)) : __hote$2.createCommentVNode("", true)
+                    }, __hote$2.toDisplayString(suite.value ? `L'heure est bonne, ${suite.value}.` : !t.value.resultat || t.value.resultat === "en_cours" ? "L'heure est bonne ; la séance joue encore." : "Le fuseau et l'horloge sont bons."), 1)) : __hote$2.createCommentVNode("", true)
                   ]),
                   __hote$2.createElementVNode("div", _hoisted_23$1, [
                     __hote$2.createElementVNode("span", null, "créée « " + __hote$2.toDisplayString(t.value.nom) + " »", 1),
@@ -1119,53 +1155,54 @@ const _hoisted_6$3 = {
   style: { "display": "flex", "flex-wrap": "wrap", "gap": "var(--space-1-5)", "align-items": "center" }
 };
 const _hoisted_7$2 = { style: { "color": "var(--color-ink)" } };
-const _hoisted_8$2 = ["aria-checked", "onClick"];
-const _hoisted_9$2 = { style: { "font-weight": "600", "font-size": "var(--text-sm)" } };
-const _hoisted_10$1 = { style: { "padding": "var(--space-4)", "background": "var(--color-surface-sunken)", "border-radius": "var(--radius-md)", "display": "flex", "flex-direction": "column", "gap": "var(--space-4)" } };
-const _hoisted_11$1 = { value: "" };
-const _hoisted_12$1 = ["value"];
-const _hoisted_13$1 = { style: { "display": "flex", "flex-wrap": "wrap", "gap": "var(--space-1-5)", "align-items": "center" } };
-const _hoisted_14$1 = ["value"];
+const _hoisted_8$2 = { style: { "display": "flex", "align-items": "center", "gap": "var(--space-3)" } };
+const _hoisted_9$2 = ["aria-checked", "onClick"];
+const _hoisted_10$1 = { style: { "font-weight": "600", "font-size": "var(--text-sm)" } };
+const _hoisted_11$1 = { style: { "padding": "var(--space-4)", "background": "var(--color-surface-sunken)", "border-radius": "var(--radius-md)", "display": "flex", "flex-direction": "column", "gap": "var(--space-4)" } };
+const _hoisted_12$1 = { value: "" };
+const _hoisted_13$1 = ["value"];
+const _hoisted_14$1 = { style: { "display": "flex", "flex-wrap": "wrap", "gap": "var(--space-1-5)", "align-items": "center" } };
 const _hoisted_15$1 = ["value"];
-const _hoisted_16$1 = { style: { "display": "flex", "align-items": "center", "gap": "var(--space-3)", "min-height": "var(--space-9)" } };
-const _hoisted_17 = ["aria-label"];
-const _hoisted_18 = {
+const _hoisted_16$1 = ["value"];
+const _hoisted_17 = { style: { "display": "flex", "align-items": "center", "gap": "var(--space-3)", "min-height": "var(--space-9)" } };
+const _hoisted_18 = ["aria-label"];
+const _hoisted_19 = {
   key: 0,
   style: { "padding": "var(--space-3)", "color": "var(--color-ink-faint)" }
 };
-const _hoisted_19 = {
+const _hoisted_20 = {
   key: 1,
   style: { "padding": "var(--space-3)", "color": "var(--color-ink-faint)" }
 };
-const _hoisted_20 = ["aria-selected", "onClick"];
-const _hoisted_21 = { style: { "color": "var(--color-ink-faint)", "font-family": "var(--font-mono)" } };
-const _hoisted_22 = { style: { "font-family": "var(--font-mono)" } };
-const _hoisted_23 = ["value", "aria-valuetext"];
+const _hoisted_21 = ["aria-selected", "onClick"];
+const _hoisted_22 = { style: { "color": "var(--color-ink-faint)", "font-family": "var(--font-mono)" } };
+const _hoisted_23 = { style: { "font-family": "var(--font-mono)" } };
 const _hoisted_24 = ["value", "aria-valuetext"];
-const _hoisted_25 = { style: { "font-family": "var(--font-mono)" } };
-const _hoisted_26 = {
+const _hoisted_25 = ["value", "aria-valuetext"];
+const _hoisted_26 = { style: { "font-family": "var(--font-mono)" } };
+const _hoisted_27 = {
   role: "group",
   "aria-label": "Durées courantes",
   style: { "display": "flex", "flex-wrap": "wrap", "gap": "var(--space-1-5)", "align-items": "center" }
 };
-const _hoisted_27 = ["value", "aria-valuetext"];
-const _hoisted_28 = {
+const _hoisted_28 = ["value", "aria-valuetext"];
+const _hoisted_29 = {
   viewBox: "0 0 1000 56",
   preserveAspectRatio: "none",
   "aria-hidden": "true",
   style: { "width": "100%", "height": "56px", "display": "block" }
 };
-const _hoisted_29 = ["x1", "x2"];
-const _hoisted_30 = ["d"];
-const _hoisted_31 = ["aria-checked", "onClick"];
-const _hoisted_32 = { style: { "font-weight": "600", "font-size": "var(--text-sm)" } };
-const _hoisted_33 = {
+const _hoisted_30 = ["x1", "x2"];
+const _hoisted_31 = ["d"];
+const _hoisted_32 = ["aria-checked", "onClick"];
+const _hoisted_33 = { style: { "font-weight": "600", "font-size": "var(--text-sm)" } };
+const _hoisted_34 = {
   key: 1,
   style: { "max-width": "12rem" }
 };
-const _hoisted_34 = { style: { "display": "flex", "flex-wrap": "wrap", "gap": "var(--space-2)", "justify-content": "flex-end", "align-items": "center", "width": "100%" } };
-const _hoisted_35 = { style: { "flex": "1", "min-width": "14rem", "font-size": "var(--text-sm)", "color": "var(--color-ink-muted)" } };
-const _hoisted_36 = { style: { "color": "var(--color-ink)", "font-weight": "600" } };
+const _hoisted_35 = { style: { "display": "flex", "flex-wrap": "wrap", "gap": "var(--space-2)", "justify-content": "flex-end", "align-items": "center", "width": "100%" } };
+const _hoisted_36 = { style: { "flex": "1", "min-width": "14rem", "font-size": "var(--text-sm)", "color": "var(--color-ink-muted)" } };
+const _hoisted_37 = { style: { "color": "var(--color-ink)", "font-weight": "600" } };
 const _sfc_main$3 = {
   __name: "Formulaire",
   props: { id: { type: Number, default: null }, etroit: Boolean },
@@ -1246,16 +1283,16 @@ const _sfc_main$3 = {
     const resultats = __hote$2.ref(null);
     const choisi = __hote$2.ref(false);
     __hote$2.onMounted(async () => {
-      chargerPlaylists().then((l) => {
+      chargerPlaylists({ frais: true }).then((l) => {
         playlists.value = l;
         if (!props.id && e.contexte === "playlist" && e.contexte_id == null && l.length) e.contexte_id = premierePlaylist(l);
         if (!props.id && !l.length) e.contexte = "bibliotheque";
       });
-      chargerGenres().then((l) => {
+      chargerGenres({ frais: true }).then((l) => {
         genres.value = l;
       });
       if (props.id) {
-        if (etat.alarmes === null) await chargerAlarmes();
+        await chargerAlarmes();
         const a = (etat.alarmes || []).find((x) => x.id === props.id);
         if (!a) {
           erreurChargement.value = etat.erreurListe ? etat.erreurListe.message : "Cette alarme n'existe plus.";
@@ -1286,9 +1323,14 @@ const _sfc_main$3 = {
       var _a;
       return ((_a = l.find((p) => p.item_count > 0) || l[0]) == null ? void 0 : _a.id) ?? null;
     };
+    const uniquePassee = __hote$2.computed(() => {
+      const a = initiale.value;
+      return !!a && a.jours === 0 && !a.active && !!a.derniere_echeance;
+    });
     function champ(nom, valeur) {
       e[nom] = valeur;
       delete er[OU[nom]];
+      if ((nom === "heure" || nom === "jours") && uniquePassee.value && !e.active) e.active = true;
     }
     function choisirContexte(v) {
       if (e.contexte === v) return;
@@ -1392,6 +1434,9 @@ const _sfc_main$3 = {
             else ailleurs.push(`${c || "corps"} : ${message}`);
           }
           erreurServeur.value = ailleurs.length ? ailleurs : ["Corrigez les champs signalés (422)."];
+        } else if (x.code === "alarme_introuvable") {
+          erreurServeur.value = ["Cette alarme n'existe plus : elle a été supprimée entre-temps."];
+          chargerAlarmes();
         } else {
           erreurServeur.value = [x.message];
         }
@@ -1467,7 +1512,7 @@ const _sfc_main$3 = {
                 __hote$2.createVNode(_sfc_main$6, { nom: "back" })
               ]),
               default: __hote$2.withCtx(() => [
-                _cache[15] || (_cache[15] = __hote$2.createTextVNode("Réveil", -1))
+                _cache[16] || (_cache[16] = __hote$2.createTextVNode("Réveil", -1))
               ]),
               _: 1
             })
@@ -1481,7 +1526,7 @@ const _sfc_main$3 = {
           style: { "margin-bottom": "var(--space-4)" }
         }, {
           default: __hote$2.withCtx(() => [
-            _cache[16] || (_cache[16] = __hote$2.createElementVNode("b", null, "Enregistrement refusé par le serveur.", -1)),
+            _cache[17] || (_cache[17] = __hote$2.createElementVNode("b", null, "Enregistrement refusé par le serveur.", -1)),
             (__hote$2.openBlock(true), __hote$2.createElementBlock(__hote$2.Fragment, null, __hote$2.renderList(erreurServeur.value, (m, i) => {
               return __hote$2.openBlock(), __hote$2.createElementBlock("span", { key: i }, __hote$2.toDisplayString(m), 1);
             }), 128))
@@ -1505,9 +1550,9 @@ const _sfc_main$3 = {
           onSubmit: __hote$2.withModifiers(enregistrer, ["prevent"])
         }, {
           footer: __hote$2.withCtx(() => [
-            __hote$2.createElementVNode("div", _hoisted_34, [
-              __hote$2.createElementVNode("span", _hoisted_35, [
-                __hote$2.createElementVNode("b", _hoisted_36, __hote$2.toDisplayString(e.heure ? __hote$2.unref(hm)(e.heure) : "—"), 1),
+            __hote$2.createElementVNode("div", _hoisted_35, [
+              __hote$2.createElementVNode("span", _hoisted_36, [
+                __hote$2.createElementVNode("b", _hoisted_37, __hote$2.toDisplayString(e.heure ? __hote$2.unref(hm)(e.heure) : "—"), 1),
                 __hote$2.createTextVNode(" " + __hote$2.toDisplayString(resume.value), 1)
               ]),
               __hote$2.createElementVNode("span", {
@@ -1517,9 +1562,9 @@ const _sfc_main$3 = {
                   intent: "ghost",
                   size: "md",
                   block: "",
-                  onClick: _cache[14] || (_cache[14] = ($event) => emit("retour"))
+                  onClick: _cache[15] || (_cache[15] = ($event) => emit("retour"))
                 }, {
-                  default: __hote$2.withCtx(() => [..._cache[26] || (_cache[26] = [
+                  default: __hote$2.withCtx(() => [..._cache[28] || (_cache[28] = [
                     __hote$2.createTextVNode("Annuler", -1)
                   ])]),
                   _: 1
@@ -1535,7 +1580,7 @@ const _sfc_main$3 = {
                   block: "",
                   loading: envoi.value
                 }, {
-                  default: __hote$2.withCtx(() => [..._cache[27] || (_cache[27] = [
+                  default: __hote$2.withCtx(() => [..._cache[29] || (_cache[29] = [
                     __hote$2.createTextVNode("Enregistrer", -1)
                   ])]),
                   _: 1
@@ -1590,7 +1635,7 @@ const _sfc_main$3 = {
                         }, 1032, ["pressed", "aria-label", "onClick"])
                       ]);
                     }), 128)),
-                    _cache[17] || (_cache[17] = __hote$2.createElementVNode("span", {
+                    _cache[18] || (_cache[18] = __hote$2.createElementVNode("span", {
                       "aria-hidden": "true",
                       style: { "width": "1px", "height": "20px", "background": "var(--color-border)", "margin": "0 var(--space-1)" }
                     }, null, -1)),
@@ -1616,11 +1661,21 @@ const _sfc_main$3 = {
                     style: indice
                   }, [
                     __hote$2.createTextVNode(__hote$2.toDisplayString(e.jours === 0 ? "Une seule fois : l'alarme se désactive après son passage. " : ""), 1),
-                    apercu.value ? (__hote$2.openBlock(), __hote$2.createElementBlock(__hote$2.Fragment, { key: 0 }, [
-                      _cache[18] || (_cache[18] = __hote$2.createTextVNode("Prochaine : ", -1)),
+                    !e.active ? (__hote$2.openBlock(), __hote$2.createElementBlock(__hote$2.Fragment, { key: 0 }, [
+                      __hote$2.createTextVNode("Désactivée : elle ne sonnera pas.")
+                    ], 64)) : apercu.value ? (__hote$2.openBlock(), __hote$2.createElementBlock(__hote$2.Fragment, { key: 1 }, [
+                      _cache[19] || (_cache[19] = __hote$2.createTextVNode("Prochaine : ", -1)),
                       __hote$2.createElementVNode("b", _hoisted_7$2, __hote$2.toDisplayString(apercu.value), 1)
                     ], 64)) : __hote$2.createCommentVNode("", true)
                   ]))
+                ]),
+                __hote$2.createElementVNode("div", _hoisted_8$2, [
+                  __hote$2.createVNode(__hote$2.unref(__hote.UiSwitch), {
+                    "model-value": e.active,
+                    "aria-labelledby": "denon-lib-active",
+                    "onUpdate:modelValue": _cache[4] || (_cache[4] = ($event) => champ("active", $event))
+                  }, null, 8, ["model-value"]),
+                  _cache[20] || (_cache[20] = __hote$2.createElementVNode("span", { id: "denon-lib-active" }, "Active", -1))
                 ])
               ], 4),
               __hote$2.createElementVNode("div", {
@@ -1641,14 +1696,14 @@ const _sfc_main$3 = {
                       style: __hote$2.normalizeStyle(option(e.contexte === o.v)),
                       onClick: ($event) => choisirContexte(o.v)
                     }, [
-                      __hote$2.createElementVNode("b", _hoisted_9$2, __hote$2.toDisplayString(o.titre), 1),
+                      __hote$2.createElementVNode("b", _hoisted_10$1, __hote$2.toDisplayString(o.titre), 1),
                       __hote$2.createElementVNode("span", {
                         style: __hote$2.normalizeStyle({ fontSize: "var(--text-xs)", color: e.contexte === o.v ? "var(--color-primary-ink)" : "var(--color-ink-muted)" })
                       }, __hote$2.toDisplayString(o.sous), 5)
-                    ], 12, _hoisted_8$2);
+                    ], 12, _hoisted_9$2);
                   }), 64))
                 ]),
-                __hote$2.createElementVNode("div", _hoisted_10$1, [
+                __hote$2.createElementVNode("div", _hoisted_11$1, [
                   e.contexte === "playlist" ? (__hote$2.openBlock(), __hote$2.createElementBlock("div", {
                     key: 0,
                     style: rangee
@@ -1658,15 +1713,15 @@ const _sfc_main$3 = {
                         "model-value": e.contexte_id ?? "",
                         label: "Playlist",
                         block: "",
-                        "onUpdate:modelValue": _cache[4] || (_cache[4] = ($event) => champ("contexte_id", $event === "" ? null : +$event))
+                        "onUpdate:modelValue": _cache[5] || (_cache[5] = ($event) => champ("contexte_id", $event === "" ? null : +$event))
                       }, {
                         default: __hote$2.withCtx(() => [
-                          __hote$2.createElementVNode("option", _hoisted_11$1, __hote$2.toDisplayString(playlists.value === null ? "Chargement…" : playlists.value.length ? "Choisir une playlist" : "Aucune playlist"), 1),
+                          __hote$2.createElementVNode("option", _hoisted_12$1, __hote$2.toDisplayString(playlists.value === null ? "Chargement…" : playlists.value.length ? "Choisir une playlist" : "Aucune playlist"), 1),
                           (__hote$2.openBlock(true), __hote$2.createElementBlock(__hote$2.Fragment, null, __hote$2.renderList(playlists.value || [], (p) => {
                             return __hote$2.openBlock(), __hote$2.createElementBlock("option", {
                               key: p.id,
                               value: p.id
-                            }, __hote$2.toDisplayString(p.name) + " (" + __hote$2.toDisplayString(p.item_count) + " piste" + __hote$2.toDisplayString(p.item_count > 1 ? "s" : "") + ")", 9, _hoisted_12$1);
+                            }, __hote$2.toDisplayString(p.name) + " (" + __hote$2.toDisplayString(p.item_count) + " piste" + __hote$2.toDisplayString(p.item_count > 1 ? "s" : "") + ")", 9, _hoisted_13$1);
                           }), 128))
                         ]),
                         _: 1
@@ -1681,13 +1736,13 @@ const _sfc_main$3 = {
                     ]),
                     __hote$2.createElementVNode("div", { style: colonne }, [
                       __hote$2.createElementVNode("span", { style: libelle }, "Ordre"),
-                      __hote$2.createElementVNode("div", _hoisted_13$1, [
+                      __hote$2.createElementVNode("div", _hoisted_14$1, [
                         __hote$2.createVNode(__hote$2.unref(__hote.UiChip), {
                           interactive: "",
                           pressed: !e.melange,
-                          onClick: _cache[5] || (_cache[5] = ($event) => champ("melange", false))
+                          onClick: _cache[6] || (_cache[6] = ($event) => champ("melange", false))
                         }, {
-                          default: __hote$2.withCtx(() => [..._cache[19] || (_cache[19] = [
+                          default: __hote$2.withCtx(() => [..._cache[21] || (_cache[21] = [
                             __hote$2.createTextVNode("Dans l'ordre", -1)
                           ])]),
                           _: 1
@@ -1695,9 +1750,9 @@ const _sfc_main$3 = {
                         __hote$2.createVNode(__hote$2.unref(__hote.UiChip), {
                           interactive: "",
                           pressed: e.melange,
-                          onClick: _cache[6] || (_cache[6] = ($event) => champ("melange", true))
+                          onClick: _cache[7] || (_cache[7] = ($event) => champ("melange", true))
                         }, {
-                          default: __hote$2.withCtx(() => [..._cache[20] || (_cache[20] = [
+                          default: __hote$2.withCtx(() => [..._cache[22] || (_cache[22] = [
                             __hote$2.createTextVNode("Mélangée", -1)
                           ])]),
                           _: 1
@@ -1711,15 +1766,15 @@ const _sfc_main$3 = {
                           "model-value": e.genre_id ?? "",
                           label: "Genre",
                           block: "",
-                          "onUpdate:modelValue": _cache[7] || (_cache[7] = ($event) => champ("genre_id", $event === "" ? null : +$event))
+                          "onUpdate:modelValue": _cache[8] || (_cache[8] = ($event) => champ("genre_id", $event === "" ? null : +$event))
                         }, {
                           default: __hote$2.withCtx(() => [
-                            _cache[21] || (_cache[21] = __hote$2.createElementVNode("option", { value: "" }, "Tous les genres", -1)),
+                            _cache[23] || (_cache[23] = __hote$2.createElementVNode("option", { value: "" }, "Tous les genres", -1)),
                             (__hote$2.openBlock(true), __hote$2.createElementBlock(__hote$2.Fragment, null, __hote$2.renderList(genres.value || [], (g) => {
                               return __hote$2.openBlock(), __hote$2.createElementBlock("option", {
                                 key: g.id,
                                 value: g.id
-                              }, __hote$2.toDisplayString(g.name), 9, _hoisted_14$1);
+                              }, __hote$2.toDisplayString(g.name), 9, _hoisted_15$1);
                             }), 128))
                           ]),
                           _: 1
@@ -1734,15 +1789,15 @@ const _sfc_main$3 = {
                           "model-value": e.format ?? "",
                           label: "Format",
                           block: "",
-                          "onUpdate:modelValue": _cache[8] || (_cache[8] = ($event) => champ("format", $event || null))
+                          "onUpdate:modelValue": _cache[9] || (_cache[9] = ($event) => champ("format", $event || null))
                         }, {
                           default: __hote$2.withCtx(() => [
-                            _cache[22] || (_cache[22] = __hote$2.createElementVNode("option", { value: "" }, "Tous les formats", -1)),
+                            _cache[24] || (_cache[24] = __hote$2.createElementVNode("option", { value: "" }, "Tous les formats", -1)),
                             (__hote$2.openBlock(true), __hote$2.createElementBlock(__hote$2.Fragment, null, __hote$2.renderList(__hote$2.unref(FORMATS), (f) => {
                               return __hote$2.openBlock(), __hote$2.createElementBlock("option", {
                                 key: f,
                                 value: f
-                              }, __hote$2.toDisplayString(f), 9, _hoisted_15$1);
+                              }, __hote$2.toDisplayString(f), 9, _hoisted_16$1);
                             }), 128))
                           ]),
                           _: 1
@@ -1757,13 +1812,13 @@ const _sfc_main$3 = {
                           style: libelle,
                           id: "denon-lib-fav"
                         }, "Favoris"),
-                        __hote$2.createElementVNode("div", _hoisted_16$1, [
+                        __hote$2.createElementVNode("div", _hoisted_17, [
                           __hote$2.createVNode(__hote$2.unref(__hote.UiSwitch), {
                             "model-value": e.favoris,
                             "aria-labelledby": "denon-lib-fav-texte",
-                            "onUpdate:modelValue": _cache[9] || (_cache[9] = ($event) => champ("favoris", $event))
+                            "onUpdate:modelValue": _cache[10] || (_cache[10] = ($event) => champ("favoris", $event))
                           }, null, 8, ["model-value"]),
-                          _cache[23] || (_cache[23] = __hote$2.createElementVNode("span", { id: "denon-lib-fav-texte" }, "Favoris seulement", -1))
+                          _cache[25] || (_cache[25] = __hote$2.createElementVNode("span", { id: "denon-lib-fav-texte" }, "Favoris seulement", -1))
                         ])
                       ])
                     ]),
@@ -1790,7 +1845,7 @@ const _sfc_main$3 = {
                       "aria-label": e.contexte === "artiste" ? "Artistes" : "Albums",
                       style: { "display": "flex", "flex-direction": "column", "border": "1px solid var(--color-border)", "border-radius": "var(--radius-md)", "background": "var(--color-surface)", "max-height": "11rem", "overflow": "auto" }
                     }, [
-                      resultats.value === null ? (__hote$2.openBlock(), __hote$2.createElementBlock("span", _hoisted_18, "Recherche…")) : !resultats.value.length ? (__hote$2.openBlock(), __hote$2.createElementBlock("span", _hoisted_19, __hote$2.toDisplayString(e.contexte === "artiste" ? "Aucun artiste ne correspond." : "Aucun album ne correspond."), 1)) : __hote$2.createCommentVNode("", true),
+                      resultats.value === null ? (__hote$2.openBlock(), __hote$2.createElementBlock("span", _hoisted_19, "Recherche…")) : !resultats.value.length ? (__hote$2.openBlock(), __hote$2.createElementBlock("span", _hoisted_20, __hote$2.toDisplayString(e.contexte === "artiste" ? "Aucun artiste ne correspond." : "Aucun album ne correspond."), 1)) : __hote$2.createCommentVNode("", true),
                       (__hote$2.openBlock(true), __hote$2.createElementBlock(__hote$2.Fragment, null, __hote$2.renderList(resultats.value || [], (r, i) => {
                         return __hote$2.openBlock(), __hote$2.createElementBlock("button", {
                           key: r.id,
@@ -1801,10 +1856,10 @@ const _sfc_main$3 = {
                           onClick: ($event) => prendre(r)
                         }, [
                           __hote$2.createElementVNode("span", null, __hote$2.toDisplayString(r.nom), 1),
-                          __hote$2.createElementVNode("span", _hoisted_21, __hote$2.toDisplayString(r.detail), 1)
-                        ], 12, _hoisted_20);
+                          __hote$2.createElementVNode("span", _hoisted_22, __hote$2.toDisplayString(r.detail), 1)
+                        ], 12, _hoisted_21);
                       }), 128))
-                    ], 8, _hoisted_17)) : choisi.value ? (__hote$2.openBlock(), __hote$2.createElementBlock("span", {
+                    ], 8, _hoisted_18)) : choisi.value ? (__hote$2.openBlock(), __hote$2.createElementBlock("span", {
                       key: 1,
                       style: indice
                     }, "Tirage dans les pistes " + __hote$2.toDisplayString(e.contexte === "artiste" ? "de l'artiste" : "de l'album") + ", comme l'aléatoire du player.", 1)) : __hote$2.createCommentVNode("", true)
@@ -1822,7 +1877,7 @@ const _sfc_main$3 = {
                         style: libelle,
                         for: "denon-dep"
                       }, "Volume de départ"),
-                      __hote$2.createElementVNode("span", _hoisted_22, __hote$2.toDisplayString(__hote$2.unref(db)(e.volume_depart_db)), 1)
+                      __hote$2.createElementVNode("span", _hoisted_23, __hote$2.toDisplayString(__hote$2.unref(db)(e.volume_depart_db)), 1)
                     ]),
                     __hote$2.createElementVNode("input", {
                       id: "denon-dep",
@@ -1833,8 +1888,8 @@ const _sfc_main$3 = {
                       value: e.volume_depart_db,
                       "aria-valuetext": __hote$2.unref(db)(e.volume_depart_db),
                       style: range,
-                      onInput: _cache[10] || (_cache[10] = ($event) => champ("volume_depart_db", +$event.target.value))
-                    }, null, 40, _hoisted_23),
+                      onInput: _cache[11] || (_cache[11] = ($event) => champ("volume_depart_db", +$event.target.value))
+                    }, null, 40, _hoisted_24),
                     er.dep ? (__hote$2.openBlock(), __hote$2.createElementBlock("span", {
                       key: 0,
                       style: erreurStyle
@@ -1859,8 +1914,8 @@ const _sfc_main$3 = {
                       value: e.volume_cible_db,
                       "aria-valuetext": __hote$2.unref(db)(e.volume_cible_db),
                       style: range,
-                      onInput: _cache[11] || (_cache[11] = ($event) => champ("volume_cible_db", +$event.target.value))
-                    }, null, 40, _hoisted_24),
+                      onInput: _cache[12] || (_cache[12] = ($event) => champ("volume_cible_db", +$event.target.value))
+                    }, null, 40, _hoisted_25),
                     er.cib ? (__hote$2.openBlock(), __hote$2.createElementBlock("span", {
                       key: 0,
                       style: erreurStyle
@@ -1876,9 +1931,9 @@ const _sfc_main$3 = {
                       style: libelle,
                       for: "denon-montee"
                     }, "Durée de la montée"),
-                    __hote$2.createElementVNode("span", _hoisted_25, __hote$2.toDisplayString(e.montee_s === 0 ? "aucune : volume cible d'emblée" : __hote$2.unref(duree)(e.montee_s)), 1)
+                    __hote$2.createElementVNode("span", _hoisted_26, __hote$2.toDisplayString(e.montee_s === 0 ? "aucune : volume cible d'emblée" : __hote$2.unref(duree)(e.montee_s)), 1)
                   ]),
-                  __hote$2.createElementVNode("div", _hoisted_26, [
+                  __hote$2.createElementVNode("div", _hoisted_27, [
                     (__hote$2.openBlock(true), __hote$2.createElementBlock(__hote$2.Fragment, null, __hote$2.renderList(__hote$2.unref(PRESETS_MONTEE), (m) => {
                       return __hote$2.openBlock(), __hote$2.createBlock(__hote$2.unref(__hote.UiChip), {
                         key: m,
@@ -1902,10 +1957,10 @@ const _sfc_main$3 = {
                     value: e.montee_s,
                     "aria-valuetext": e.montee_s === 0 ? "aucune" : __hote$2.unref(duree)(e.montee_s),
                     style: range,
-                    onInput: _cache[12] || (_cache[12] = ($event) => champ("montee_s", +$event.target.value))
-                  }, null, 40, _hoisted_27),
-                  (__hote$2.openBlock(), __hote$2.createElementBlock("svg", _hoisted_28, [
-                    _cache[24] || (_cache[24] = __hote$2.createElementVNode("line", {
+                    onInput: _cache[13] || (_cache[13] = ($event) => champ("montee_s", +$event.target.value))
+                  }, null, 40, _hoisted_28),
+                  (__hote$2.openBlock(), __hote$2.createElementBlock("svg", _hoisted_29, [
+                    _cache[26] || (_cache[26] = __hote$2.createElementVNode("line", {
                       x1: "0",
                       x2: "1000",
                       y1: "50",
@@ -1922,7 +1977,7 @@ const _sfc_main$3 = {
                         y2: "54",
                         stroke: "var(--color-border)",
                         "vector-effect": "non-scaling-stroke"
-                      }, null, 8, _hoisted_29);
+                      }, null, 8, _hoisted_30);
                     }), 64)),
                     __hote$2.createElementVNode("path", {
                       d: courbe.value,
@@ -1930,9 +1985,9 @@ const _sfc_main$3 = {
                       stroke: "var(--color-primary)",
                       "stroke-width": "2",
                       "vector-effect": "non-scaling-stroke"
-                    }, null, 8, _hoisted_30)
+                    }, null, 8, _hoisted_31)
                   ])),
-                  _cache[25] || (_cache[25] = __hote$2.createElementVNode("div", {
+                  _cache[27] || (_cache[27] = __hote$2.createElementVNode("div", {
                     "aria-hidden": "true",
                     style: { "display": "flex", "justify-content": "space-between", "font-family": "var(--font-mono)", "font-size": "11px", "color": "var(--color-ink-faint)", "margin-top": "calc(-1 * var(--space-1))" }
                   }, [
@@ -1967,17 +2022,17 @@ const _sfc_main$3 = {
                       style: __hote$2.normalizeStyle(option(e.fin_mode === o.v)),
                       onClick: ($event) => choisirFin(o.v)
                     }, [
-                      __hote$2.createElementVNode("b", _hoisted_32, __hote$2.toDisplayString(o.titre), 1),
+                      __hote$2.createElementVNode("b", _hoisted_33, __hote$2.toDisplayString(o.titre), 1),
                       __hote$2.createElementVNode("span", {
                         style: __hote$2.normalizeStyle({ fontSize: "var(--text-xs)", color: e.fin_mode === o.v ? "var(--color-primary-ink)" : "var(--color-ink-muted)" })
                       }, __hote$2.toDisplayString(o.sous), 5)
-                    ], 12, _hoisted_31);
+                    ], 12, _hoisted_32);
                   }), 64))
                 ]),
                 e.fin_mode === "sans_limite" ? (__hote$2.openBlock(), __hote$2.createElementBlock("span", {
                   key: 0,
                   style: indice
-                }, "Le tirage se relance quand il s'épuise. L'ampli reste allumé.")) : (__hote$2.openBlock(), __hote$2.createElementBlock("div", _hoisted_33, [
+                }, "Le tirage se relance quand il s'épuise. L'ampli reste allumé.")) : (__hote$2.openBlock(), __hote$2.createElementBlock("div", _hoisted_34, [
                   __hote$2.createVNode(__hote$2.unref(__hote.UiField), {
                     "model-value": e.fin_valeur ?? "",
                     type: "number",
@@ -1986,7 +2041,7 @@ const _sfc_main$3 = {
                     label: e.fin_mode === "duree" ? "Durée (min)" : "Nombre de pistes",
                     error: er.fin,
                     block: "",
-                    "onUpdate:modelValue": _cache[13] || (_cache[13] = ($event) => champ("fin_valeur", $event === "" ? null : Number($event)))
+                    "onUpdate:modelValue": _cache[14] || (_cache[14] = ($event) => champ("fin_valeur", $event === "" ? null : Number($event)))
                   }, null, 8, ["model-value", "max", "label", "error"])
                 ]))
               ], 4)
@@ -2071,6 +2126,13 @@ const _sfc_main$2 = {
       etat.alarmes = null;
       await chargerAlarmes();
     }
+    function introuvable(a, e) {
+      if (e.code !== "alarme_introuvable") return false;
+      erreurGeste.value = `« ${a.nom} » : cette alarme n'existe plus.`;
+      aSupprimer.value = null;
+      chargerAlarmes();
+      return true;
+    }
     async function basculer(a, active) {
       enCours[a.id] = true;
       erreurGeste.value = "";
@@ -2078,7 +2140,7 @@ const _sfc_main$2 = {
         const r = await reveil.modifier(a.id, { active });
         Object.assign(a, r);
       } catch (e) {
-        erreurGeste.value = `« ${a.nom} » n'a pas pu être ${active ? "activée" : "désactivée"} : ${e.message}`;
+        if (!introuvable(a, e)) erreurGeste.value = `« ${a.nom} » n'a pas pu être ${active ? "activée" : "désactivée"} : ${e.message}`;
       } finally {
         enCours[a.id] = false;
       }
@@ -2091,7 +2153,7 @@ const _sfc_main$2 = {
         aSupprimer.value = null;
         await chargerAlarmes();
       } catch (e) {
-        erreurGeste.value = `« ${a.nom} » n'a pas pu être supprimée : ${e.message}`;
+        if (!introuvable(a, e)) erreurGeste.value = `« ${a.nom} » n'a pas pu être supprimée : ${e.message}`;
       } finally {
         enCours[a.id] = false;
       }
@@ -2104,16 +2166,18 @@ const _sfc_main$2 = {
     };
     async function essayer(a) {
       delete retours[a.id];
+      erreurGeste.value = "";
       essai.value = a.id;
       try {
         await reveil.essayer(a.id);
-        await chargerSeance();
+        await chargerSeance({ force: true });
         emit("essaye", a);
       } catch (e) {
+        if (introuvable(a, e)) return;
         const f = RETOURS[e.code];
         retours[a.id] = f ? f(e) : { titre: "Rien n'a joué.", texte: e.message, diagnostic: e.statut === 409 };
         emit("essaye", a, e);
-        await chargerSeance();
+        await chargerSeance({ force: true });
       } finally {
         essai.value = null;
         chargerAlarmes();
@@ -2493,7 +2557,7 @@ const _hoisted_8 = { key: 2 };
 const _hoisted_9 = { style: { "display": "inline-flex", "align-items": "center", "gap": "var(--space-1)" } };
 const _sfc_main$1 = {
   __name: "Seance",
-  props: { annonce: { type: Object, default: null }, etroit: Boolean, arret: Boolean },
+  props: { annonce: { type: Object, default: null }, etroit: Boolean, arret: Boolean, erreurArret: { type: String, default: "" } },
   emits: ["arreter", "fermer", "diagnostic"],
   setup(__props, { emit: __emit }) {
     const props = __props;
@@ -2670,7 +2734,18 @@ const _sfc_main$1 = {
             ]),
             _: 1
           }, 8, ["block", "loading"])
-        ], 4)
+        ], 4),
+        __props.erreurArret ? (__hote$2.openBlock(), __hote$2.createBlock(_sfc_main$5, {
+          key: 0,
+          ton: "danger",
+          role: "alert",
+          style: { "grid-column": "1 / -1" }
+        }, {
+          default: __hote$2.withCtx(() => [
+            __hote$2.createElementVNode("span", null, __hote$2.toDisplayString(__props.erreurArret), 1)
+          ]),
+          _: 1
+        })) : __hote$2.createCommentVNode("", true)
       ], 4)) : s.value ? (__hote$2.openBlock(), __hote$2.createElementBlock("section", {
         key: 3,
         "aria-label": "Séance en cours",
@@ -2737,7 +2812,18 @@ const _sfc_main$1 = {
             ]),
             _: 1
           }, 8, ["block", "loading"])
-        ], 4)
+        ], 4),
+        __props.erreurArret ? (__hote$2.openBlock(), __hote$2.createBlock(_sfc_main$5, {
+          key: 2,
+          ton: "danger",
+          role: "alert",
+          style: { "grid-column": "1 / -1" }
+        }, {
+          default: __hote$2.withCtx(() => [
+            __hote$2.createElementVNode("span", null, __hote$2.toDisplayString(__props.erreurArret), 1)
+          ]),
+          _: 1
+        })) : __hote$2.createCommentVNode("", true)
       ], 4)) : __hote$2.createCommentVNode("", true);
     };
   }
@@ -2747,7 +2833,7 @@ const _hoisted_1 = {
   style: { "display": "flex", "gap": "var(--space-1-5)", "font-size": "var(--text-xs)", "color": "var(--color-ink-faint)", "margin-bottom": "var(--space-2)", "flex-wrap": "wrap" }
 };
 const _hoisted_2 = { style: { "display": "flex", "flex-wrap": "wrap", "align-items": "flex-end", "justify-content": "space-between", "gap": "var(--space-4)", "margin-bottom": "var(--space-6)" } };
-const _hoisted_3 = ["aria-selected", "tabindex", "onClick"];
+const _hoisted_3 = ["aria-selected", "tabindex", "onClick", "onKeydown"];
 const _hoisted_4 = {
   key: 1,
   "aria-label": "à vérifier",
@@ -2792,6 +2878,16 @@ const _sfc_main = {
       onglet.value = "alarmes";
     }
     const onglets = [{ v: "alarmes", lib: "Alarmes" }, { v: "diagnostic", lib: "Diagnostic" }];
+    function clavierOnglets(e, i) {
+      var _a, _b;
+      const n = onglets.length;
+      const cible = { ArrowRight: (i + 1) % n, ArrowLeft: (i - 1 + n) % n, Home: 0, End: n - 1 }[e.key];
+      if (cible === void 0) return;
+      e.preventDefault();
+      onglet.value = onglets[cible].v;
+      const boutons = (_a = e.currentTarget.parentElement) == null ? void 0 : _a.querySelectorAll('[role="tab"]');
+      (_b = boutons == null ? void 0 : boutons[cible]) == null ? void 0 : _b.focus();
+    }
     const nbAlarmes = __hote$2.computed(() => (etat.alarmes || []).filter((a) => !a.test).length);
     const aVerifier = __hote$2.computed(() => {
       void etat.maintenant;
@@ -2834,18 +2930,25 @@ const _sfc_main = {
       annonce.value = null;
       window.scrollTo({ top: 0, behavior: "smooth" });
     }
+    const erreurArret = __hote$2.ref("");
     async function arreter() {
       arret.value = true;
+      erreurArret.value = "";
       try {
-        const r = await reveil.arreter();
-        etat.seance = r.seance;
-        etat.derniere = r.derniere;
-      } catch {
-        await chargerSeance();
+        await arreterSeance();
+      } catch (e) {
+        erreurArret.value = `L'arrêt a échoué : ${e.message}`;
+        await chargerSeance({ force: true });
       } finally {
         arret.value = false;
       }
     }
+    __hote$2.watch(() => {
+      var _a;
+      return (_a = etat.seance) == null ? void 0 : _a.debut;
+    }, () => {
+      erreurArret.value = "";
+    });
     function fermerAnnonce() {
       annonce.value = null;
     }
@@ -2865,10 +2968,11 @@ const _sfc_main = {
         observateur.observe(racine.value);
       }
       chargerAlarmes();
-      chargerSeance().then(() => {
+      chargerSeance({ force: true }).then(() => {
         cleVue = cle(etat.derniere);
       });
       chargerDiagnostic();
+      reprendreSuiviTest();
       seconde = setInterval(battre, 1e3);
       sonde = setInterval(sonder, 2e3);
     });
@@ -2876,6 +2980,7 @@ const _sfc_main = {
       observateur == null ? void 0 : observateur.disconnect();
       clearInterval(seconde);
       clearInterval(sonde);
+      arreterSuiviTest();
     });
     const eyebrow = { fontSize: "var(--text-xs)", fontWeight: 600, letterSpacing: ".12em", textTransform: "uppercase", color: "var(--color-ink-muted)" };
     const titreH1 = {
@@ -2974,15 +3079,17 @@ const _sfc_main = {
             annonce: annonce.value,
             etroit: etroit.value,
             arret: arret.value,
+            "erreur-arret": erreurArret.value,
             onArreter: arreter,
             onFermer: fermerAnnonce,
             onDiagnostic: _cache[0] || (_cache[0] = ($event) => onglet.value = "diagnostic")
-          }, null, 8, ["annonce", "etroit", "arret"]),
+          }, null, 8, ["annonce", "etroit", "arret", "erreur-arret"]),
           __hote$2.createElementVNode("div", {
             role: "tablist",
+            "aria-label": "Réveil",
             style: barre
           }, [
-            (__hote$2.openBlock(), __hote$2.createElementBlock(__hote$2.Fragment, null, __hote$2.renderList(onglets, (o) => {
+            (__hote$2.openBlock(), __hote$2.createElementBlock(__hote$2.Fragment, null, __hote$2.renderList(onglets, (o, i) => {
               return __hote$2.createElementVNode("button", {
                 key: o.v,
                 type: "button",
@@ -2990,7 +3097,8 @@ const _sfc_main = {
                 "aria-selected": onglet.value === o.v,
                 tabindex: onglet.value === o.v ? 0 : -1,
                 style: __hote$2.normalizeStyle(tab(onglet.value === o.v)),
-                onClick: ($event) => onglet.value = o.v
+                onClick: ($event) => onglet.value = o.v,
+                onKeydown: ($event) => clavierOnglets($event, i)
               }, [
                 __hote$2.createTextVNode(__hote$2.toDisplayString(o.lib) + " ", 1),
                 o.v === "alarmes" ? (__hote$2.openBlock(), __hote$2.createElementBlock("span", {
@@ -2999,7 +3107,7 @@ const _sfc_main = {
                 }, __hote$2.toDisplayString(nbAlarmes.value), 5)) : __hote$2.createCommentVNode("", true),
                 o.v === "diagnostic" && aVerifier.value ? (__hote$2.openBlock(), __hote$2.createElementBlock("span", _hoisted_4)) : __hote$2.createCommentVNode("", true),
                 onglet.value === o.v ? (__hote$2.openBlock(), __hote$2.createElementBlock("span", _hoisted_5)) : __hote$2.createCommentVNode("", true)
-              ], 12, _hoisted_3);
+              ], 44, _hoisted_3);
             }), 64))
           ]),
           __hote$2.createElementVNode("div", _hoisted_6, [

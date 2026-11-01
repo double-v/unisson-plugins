@@ -51,13 +51,42 @@ export async function chargerAlarmes() {
   }
 }
 
-export async function chargerSeance() {
+// Les relevés de la séance ne se chevauchent pas : un sondage ne part pas
+// tant que le précédent est en vol, et une réponse doublée par un relevé
+// plus récent (numéro de séquence) ou arrivée pendant « Arrêter » est jetée.
+let seqSeance = 0;
+let seanceEnVol = false;
+let arretEnCours = false;
+
+export async function chargerSeance({ force = false } = {}) {
+  if (arretEnCours || (seanceEnVol && !force)) return;
+  const n = ++seqSeance;
+  seanceEnVol = true;
   try {
     const r = await reveil.seance();
+    if (n !== seqSeance || arretEnCours) return;
     etat.seance = r.seance;
     etat.derniere = r.derniere;
   } catch {
     // La bannière se tait : la liste dit déjà si le plugin ne répond pas.
+  } finally {
+    if (n === seqSeance) seanceEnVol = false;
+  }
+}
+
+/** « Arrêter » : aucun relevé pendant l'appel, et ceux en vol sont jetés ;
+ *  la réponse d'`arreter` fait foi. Lève l'erreur, pour que le bandeau la
+ *  dise. */
+export async function arreterSeance() {
+  arretEnCours = true;
+  seqSeance += 1;
+  seanceEnVol = false;
+  try {
+    const r = await reveil.arreter();
+    etat.seance = r.seance;
+    etat.derniere = r.derniere;
+  } finally {
+    arretEnCours = false;
   }
 }
 
@@ -88,7 +117,10 @@ export async function chargerDiagnostic() {
 let playlistsChargees = null;
 let genresCharges = null;
 
-export function chargerPlaylists() {
+/** `frais` : relire au lieu de reprendre le dernier relevé (le formulaire
+ *  le demande à chaque ouverture : une playlist a pu naître entre-temps). */
+export function chargerPlaylists({ frais = false } = {}) {
+  if (frais) playlistsChargees = null;
   playlistsChargees ??= coeur.playlists().then((l) => {
     for (const p of l) etat.refs.playlists[p.id] = p;
     return l;
@@ -96,7 +128,8 @@ export function chargerPlaylists() {
   return playlistsChargees;
 }
 
-export function chargerGenres() {
+export function chargerGenres({ frais = false } = {}) {
+  if (frais) genresCharges = null;
   genresCharges ??= coeur.genres().then((l) => {
     for (const g of l) etat.refs.genres[g.id] = g;
     return l;
@@ -193,17 +226,34 @@ function suivreTest() {
     } catch {
       // Une sonde ratée ne change rien : la suivante réessaie.
     }
-    // On suit jusqu'au résultat de la séance (il arrive après le départ),
-    // et tant que la ligne est montrée.
-    const fini = t.etat !== "en_attente" && t.etat !== "pas_partie" && t.resultat;
-    if (!fini && (!t.retraitMs || Date.now() < t.retraitMs)) suivreTest();
+    // On suit jusqu'au résultat **final** de la séance (`en_cours` n'en est
+    // pas un : elle joue encore), au-delà des 60 s de la ligne, pour que la
+    // carte « L'heure » le reçoive ; 5 min au plus après l'échéance.
+    if (!testFini(t) && Date.now() < t.echeanceMs + SUIVI_MAX_MS) suivreTest();
   }, 1000);
 }
 
+const SUIVI_MAX_MS = 5 * 60_000;
+const sansResultat = (t) => !t.resultat || t.resultat === "en_cours";
+export const testFini = (t) => (t.etat === "partie" || t.etat === "manquee") && !sansResultat(t);
+
+/** Reprend le suivi d'un test pas encore fini (la page revient). */
+export function reprendreSuiviTest() {
+  const t = etat.test;
+  if (t && !testFini(t) && Date.now() < t.echeanceMs + SUIVI_MAX_MS) suivreTest();
+}
+
+/** Arrête la sonde du test (la page se démonte). */
+export function arreterSuiviTest() {
+  clearTimeout(sondeTest);
+  sondeTest = null;
+}
+
 /** « mais ampli injoignable » : ce que le résultat de la séance ajoute à un
- *  départ à l'heure. Rien si elle a joué, ou si on ne le sait pas encore. */
+ *  départ à l'heure. Rien si elle a joué, ou si on ne le sait pas encore
+ *  (`en_cours` : la séance joue encore). */
 export function suiteDuTest(t) {
-  if (!t || !t.resultat || t.resultat === "joue" || t.resultat === "remplacee") return "";
+  if (!t || sansResultat(t) || t.resultat === "joue" || t.resultat === "remplacee") return "";
   const muettes = ["adresse_reseau_non_reglee", "aucune_piste", "aucun_format_commun", "ampli_injoignable", "lecture_impossible"];
   const lib = resultat(t.resultat).lib.toLowerCase();
   return `mais ${lib}${muettes.includes(t.resultat) && t.resultat !== "ampli_injoignable" ? " : rien n'a joué" : ""}`;

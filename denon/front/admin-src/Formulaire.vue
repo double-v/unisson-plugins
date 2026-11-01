@@ -36,7 +36,12 @@
               <UiChip v-for="[v, l] in RACCOURCIS" :key="v" interactive :pressed="e.jours === v" @click="champ('jours', v)">{{ l }}</UiChip>
             </div>
             <span v-if="er.jours" :style="erreurStyle">{{ er.jours }}</span>
-            <span v-else :style="indice">{{ e.jours === 0 ? "Une seule fois : l'alarme se désactive après son passage. " : "" }}<template v-if="apercu">Prochaine : <b style="color: var(--color-ink)">{{ apercu }}</b></template></span>
+            <span v-else :style="indice">{{ e.jours === 0 ? "Une seule fois : l'alarme se désactive après son passage. " : "" }}<template
+              v-if="!e.active">Désactivée : elle ne sonnera pas.</template><template v-else-if="apercu">Prochaine : <b style="color: var(--color-ink)">{{ apercu }}</b></template></span>
+          </div>
+          <div style="display: flex; align-items: center; gap: var(--space-3)">
+            <UiSwitch :model-value="e.active" aria-labelledby="denon-lib-active" @update:model-value="champ('active', $event)" />
+            <span id="denon-lib-active">Active</span>
           </div>
         </div>
 
@@ -248,14 +253,16 @@ const resultats = ref(null);
 const choisi = ref(false);
 
 onMounted(async () => {
-  chargerPlaylists().then((l) => {
+  // Relues à chaque ouverture : une playlist ou un genre a pu naître depuis.
+  chargerPlaylists({ frais: true }).then((l) => {
     playlists.value = l;
     if (!props.id && e.contexte === "playlist" && e.contexte_id == null && l.length) e.contexte_id = premierePlaylist(l);
     if (!props.id && !l.length) e.contexte = "bibliotheque";
   });
-  chargerGenres().then((l) => { genres.value = l; });
+  chargerGenres({ frais: true }).then((l) => { genres.value = l; });
   if (props.id) {
-    if (etat.alarmes === null) await chargerAlarmes();
+    // La liste est relue : l'alarme a pu changer, ou disparaître, ailleurs.
+    await chargerAlarmes();
     const a = (etat.alarmes || []).find((x) => x.id === props.id);
     if (!a) {
       erreurChargement.value = etat.erreurListe ? etat.erreurListe.message : "Cette alarme n'existe plus.";
@@ -280,9 +287,17 @@ onMounted(async () => {
 // Une playlist qui a des pistes, de préférence : une vide n'a rien à jouer.
 const premierePlaylist = (l) => (l.find((p) => p.item_count > 0) || l[0])?.id ?? null;
 
+// Une alarme « une seule fois » déjà passée s'est désactivée d'elle-même :
+// lui donner une autre heure ou d'autres jours, c'est la reprogrammer.
+const uniquePassee = computed(() => {
+  const a = initiale.value;
+  return !!a && a.jours === 0 && !a.active && !!a.derniere_echeance;
+});
+
 function champ(nom, valeur) {
   e[nom] = valeur;
   delete er[OU[nom]];
+  if ((nom === "heure" || nom === "jours") && uniquePassee.value && !e.active) e.active = true;
 }
 
 function choisirContexte(v) {
@@ -396,6 +411,10 @@ async function enregistrer() {
         else ailleurs.push(`${c || "corps"} : ${message}`);
       }
       erreurServeur.value = ailleurs.length ? ailleurs : ["Corrigez les champs signalés (422)."];
+    } else if (x.code === "alarme_introuvable") {
+      // Supprimée ailleurs pendant qu'on la modifiait.
+      erreurServeur.value = ["Cette alarme n'existe plus : elle a été supprimée entre-temps."];
+      chargerAlarmes();
     } else {
       erreurServeur.value = [x.message];
     }

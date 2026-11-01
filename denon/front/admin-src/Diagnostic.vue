@@ -114,7 +114,7 @@
               <UiChip v-if="t.etat === 'en_attente'" tone="accent" dot>{{ reste ? `part dans ${reste} s` : "échéance passée, on attend…" }}</UiChip>
               <UiChip v-else-if="t.etat === 'partie'" tone="success" dot>partie à {{ t.heure }}, avec {{ virgule((t.retardMs || 0) / 1000) }} s de retard</UiChip>
               <UiChip v-else tone="danger" dot>pas partie : attendue à {{ t.heure }}</UiChip>
-              <span v-if="t.etat === 'partie'" :style="muet">{{ suite ? `L'heure est bonne, ${suite}.` : "Le fuseau et l'horloge sont bons." }}</span>
+              <span v-if="t.etat === 'partie'" :style="muet">{{ suite ? `L'heure est bonne, ${suite}.` : !t.resultat || t.resultat === "en_cours" ? "L'heure est bonne ; la séance joue encore." : "Le fuseau et l'horloge sont bons." }}</span>
             </div>
             <div style="font-family: var(--font-mono); font-size: 12px; color: var(--color-ink-muted); display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-4)">
               <span>créée « {{ t.nom }} »</span><span>serveur {{ t.trace.serveur }} {{ t.trace.decalage }}</span><span>UTC {{ t.trace.utc }}</span><span>échéance {{ t.heure }}</span>

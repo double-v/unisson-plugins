@@ -168,6 +168,16 @@ async function reessayer() {
   await chargerAlarmes();
 }
 
+// Une alarme supprimée ailleurs (un autre onglet) : le dire, et relire la
+// liste, où elle n'est plus.
+function introuvable(a, e) {
+  if (e.code !== "alarme_introuvable") return false;
+  erreurGeste.value = `« ${a.nom} » : cette alarme n'existe plus.`;
+  aSupprimer.value = null;
+  chargerAlarmes();
+  return true;
+}
+
 async function basculer(a, active) {
   enCours[a.id] = true;
   erreurGeste.value = "";
@@ -175,7 +185,7 @@ async function basculer(a, active) {
     const r = await reveil.modifier(a.id, { active });
     Object.assign(a, r);
   } catch (e) {
-    erreurGeste.value = `« ${a.nom} » n'a pas pu être ${active ? "activée" : "désactivée"} : ${e.message}`;
+    if (!introuvable(a, e)) erreurGeste.value = `« ${a.nom} » n'a pas pu être ${active ? "activée" : "désactivée"} : ${e.message}`;
   } finally {
     enCours[a.id] = false;
   }
@@ -189,7 +199,7 @@ async function supprimer(a) {
     aSupprimer.value = null;
     await chargerAlarmes();
   } catch (e) {
-    erreurGeste.value = `« ${a.nom} » n'a pas pu être supprimée : ${e.message}`;
+    if (!introuvable(a, e)) erreurGeste.value = `« ${a.nom} » n'a pas pu être supprimée : ${e.message}`;
   } finally {
     enCours[a.id] = false;
   }
@@ -204,18 +214,20 @@ const RETOURS = {
 
 async function essayer(a) {
   delete retours[a.id];
+  erreurGeste.value = "";
   essai.value = a.id;
   try {
     await reveil.essayer(a.id);
-    await chargerSeance();
+    await chargerSeance({ force: true });
     emit("essaye", a);
   } catch (e) {
+    if (introuvable(a, e)) return;
     const f = RETOURS[e.code];
     retours[a.id] = f ? f(e) : { titre: "Rien n'a joué.", texte: e.message, diagnostic: e.statut === 409 };
     // La séance refusée devient la « dernière » : la page est prévenue avant
     // de la relire, pour ne pas dire l'échec deux fois.
     emit("essaye", a, e);
-    await chargerSeance();
+    await chargerSeance({ force: true });
   } finally {
     essai.value = null;
     chargerAlarmes();

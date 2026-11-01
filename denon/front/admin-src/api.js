@@ -14,7 +14,9 @@ export class ErreurReveil extends Error {
 }
 
 const MESSAGES = {
-  401: "Le plugin Denon a un jeton réglé, et l'admin ne l'envoie pas : les routes du réveil lui sont fermées (401).",
+  // Les routes du réveil exigent la même origine (garde du cœur ≥ 0.6) : une
+  // page servie par un autre nom d'hôte que ceux d'unisson est refusée.
+  403: "Requête refusée par unisson : cette page n'est pas servie sous une adresse qu'il reconnaît (même origine, DEDUP_ALLOWED_HOSTS) (403).",
   404: "Le plugin Denon ne répond pas : il est peut-être désactivé (404).",
   503: "Le plugin Denon ne répond pas (503).",
 };
@@ -29,7 +31,8 @@ function normaliser(e) {
   return new ErreurReveil({
     statut: r.status,
     code: d.error || "",
-    message: r.status === 401 ? MESSAGES[401] : message,
+    // Le motif du cœur (`detail`) dit quelle origine ou quel hôte est refusé.
+    message: r.status === 403 ? `${MESSAGES[403]}${typeof d.detail === "string" ? ` ${d.detail}` : ""}` : message,
     erreurs: Array.isArray(d.erreurs) ? d.erreurs : [],
     reglage: d.reglage || null,
   });

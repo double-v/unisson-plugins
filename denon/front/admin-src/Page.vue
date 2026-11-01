@@ -23,11 +23,12 @@
         </span>
       </div>
 
-      <Seance :annonce="annonce" :etroit="etroit" :arret="arret" @arreter="arreter" @fermer="fermerAnnonce" @diagnostic="onglet = 'diagnostic'" />
+      <Seance :annonce="annonce" :etroit="etroit" :arret="arret" :erreur-arret="erreurArret" @arreter="arreter" @fermer="fermerAnnonce"
+        @diagnostic="onglet = 'diagnostic'" />
 
-      <div role="tablist" :style="barre">
-        <button v-for="o in onglets" :key="o.v" type="button" role="tab" :aria-selected="onglet === o.v" :tabindex="onglet === o.v ? 0 : -1"
-          :style="tab(onglet === o.v)" @click="onglet = o.v">
+      <div role="tablist" aria-label="Réveil" :style="barre">
+        <button v-for="(o, i) in onglets" :key="o.v" type="button" role="tab" :aria-selected="onglet === o.v" :tabindex="onglet === o.v ? 0 : -1"
+          :style="tab(onglet === o.v)" @click="onglet = o.v" @keydown="clavierOnglets($event, i)">
           {{ o.lib }}
           <span v-if="o.v === 'alarmes'" :style="compte(onglet === o.v)">{{ nbAlarmes }}</span>
           <span v-if="o.v === 'diagnostic' && aVerifier" aria-label="à vérifier" role="img"
@@ -57,8 +58,9 @@ import Formulaire from "./Formulaire.vue";
 import Icone from "./Icone.vue";
 import Liste from "./Liste.vue";
 import Seance from "./Seance.vue";
-import { reveil } from "./api.js";
-import { battre, chargerAlarmes, chargerDiagnostic, chargerSeance, etat, serveurMaintenant } from "./etat.js";
+import {
+  arreterSeance, arreterSuiviTest, battre, chargerAlarmes, chargerDiagnostic, chargerSeance, etat, reprendreSuiviTest, serveurMaintenant,
+} from "./etat.js";
 import { fuseauNavigateur, murale } from "./outils.js";
 
 const route = useRoute();
@@ -89,6 +91,19 @@ function revenir() {
 }
 
 const onglets = [{ v: "alarmes", lib: "Alarmes" }, { v: "diagnostic", lib: "Diagnostic" }];
+
+// Le clavier des onglets (motif ARIA) : ←/→ passent au voisin (en boucle),
+// Début et Fin au premier et au dernier ; la sélection suit le focus. Les
+// touches se lisent ici : l'hôte ne prête pas `withKeys` aux plugins.
+function clavierOnglets(e, i) {
+  const n = onglets.length;
+  const cible = { ArrowRight: (i + 1) % n, ArrowLeft: (i - 1 + n) % n, Home: 0, End: n - 1 }[e.key];
+  if (cible === undefined) return;
+  e.preventDefault();
+  onglet.value = onglets[cible].v;
+  const boutons = e.currentTarget.parentElement?.querySelectorAll('[role="tab"]');
+  boutons?.[cible]?.focus();
+}
 const nbAlarmes = computed(() => (etat.alarmes || []).filter((a) => !a.test).length);
 const aVerifier = computed(() => {
   void etat.maintenant;
@@ -135,18 +150,22 @@ function essaye(a, erreur) {
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
+const erreurArret = ref("");
 async function arreter() {
   arret.value = true;
+  erreurArret.value = "";
   try {
-    const r = await reveil.arreter();
-    etat.seance = r.seance;
-    etat.derniere = r.derniere;
-  } catch {
-    await chargerSeance();
+    await arreterSeance();
+  } catch (e) {
+    // La séance continue peut-être : le bandeau le dit, et on relit l'état.
+    erreurArret.value = `L'arrêt a échoué : ${e.message}`;
+    await chargerSeance({ force: true });
   } finally {
     arret.value = false;
   }
 }
+// Une nouvelle séance (ou plus de séance) efface l'erreur d'un arrêt raté.
+watch(() => etat.seance?.debut, () => { erreurArret.value = ""; });
 function fermerAnnonce() { annonce.value = null; }
 
 // ── les relevés ──────────────────────────────────────────────────────────
@@ -167,8 +186,9 @@ onMounted(() => {
     observateur.observe(racine.value);
   }
   chargerAlarmes();
-  chargerSeance().then(() => { cleVue = cle(etat.derniere); });
+  chargerSeance({ force: true }).then(() => { cleVue = cle(etat.derniere); });
   chargerDiagnostic();
+  reprendreSuiviTest();
   seconde = setInterval(battre, 1000);
   sonde = setInterval(sonder, 2000);
 });
@@ -176,6 +196,7 @@ onBeforeUnmount(() => {
   observateur?.disconnect();
   clearInterval(seconde);
   clearInterval(sonde);
+  arreterSuiviTest();
 });
 
 // ── le dessin ────────────────────────────────────────────────────────────
