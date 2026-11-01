@@ -244,7 +244,7 @@ vaut `/settings#reseau`) se préfixe de `/admin`, où l'admin est servie.
 | 2 | `backend/dlna.py` : client UPnP (description, `GetProtocolInfo`, AVTransport, DIDL-Lite) | — |
 | 3 | alarmes : migration, modèle, validation, routes CRUD, calcul de la prochaine occurrence, ordonnanceur (sans séance), testeur de fuseau et horloge | — |
 | 4 | la séance (déroulé ci-dessus), `essayer`, `seance`, `arreter`, `diagnostic` | 2, 3, cœur 0.5 |
-| 5 | les écrans | prototype validé, 3, 4 |
+| 5 | les écrans (0.4.0) : `front/admin-src/` | prototype validé, 3, 4 |
 | R0 | recette sur l'ampli : délai de réveil, plafond FLAC, source réseau | l'opérateur |
 
 ## À vérifier pendant la recette (relevé des lots 2 et US1)

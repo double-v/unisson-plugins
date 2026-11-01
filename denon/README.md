@@ -8,7 +8,8 @@ du #343 (spec 023 du cœur). Le réveil s'y ajoute (conception :
 [`docs/reveil.md`](docs/reveil.md)) : depuis la 0.2.0, les alarmes et leur
 ordonnanceur ; depuis la 0.3.0, la séance qui allume l'ampli et lui fait
 jouer la musique d'unisson par UPnP. Il demande le cœur **0.5** (flux pour
-lecteurs réseau, spec 023). Les écrans viendront au lot 5.
+lecteurs réseau, spec 023). Depuis la 0.4.0, ses écrans : la page
+« Réveil » de l'admin, dans Extensions.
 
 ## Ce qu'il apporte
 
@@ -147,6 +148,38 @@ lecteurs réseau, spec 023). Les écrans viendront au lot 5.
   est refusée (422). Elle se supprime après son
   passage ; son résultat reste lisible par `GET /tester/{id}` (en mémoire,
   les 20 derniers, perdus au redémarrage).
+- **La page « Réveil »** de l'admin (Extensions, `/admin/p/denon/reveil`),
+  d'après le prototype validé ([`docs/proto-reveil.html`](docs/proto-reveil.html)) :
+  - l'onglet **Alarmes** : interrupteur, heure et jours, ce qui se joue,
+    prochaine occurrence et dernier résultat, « Essayer maintenant » (le
+    refus 409 se dit sur la ligne), modifier, supprimer (avec confirmation) ;
+    les états vide, chargement et erreur ;
+  - le **formulaire** sur sa propre page (`?alarme=nouvelle` ou
+    `?alarme=<id>`, « ‹ Réveil » pour revenir) : jours, ce qui se joue
+    (playlists du player, genres, recherche d'artistes et d'albums par les
+    API du cœur), volumes avec l'alerte au-delà de −15 dB, montée au
+    curseur (2, 5, 10, 15 min, jusqu'à 1 h) avec sa courbe, et la fin ; les
+    refus 422 s'affichent champ par champ ;
+  - le **bandeau de séance** (allumage, piste, volume qui monte, fin prévue)
+    avec « Arrêter », puis l'annonce de l'arrêt ou de l'échec ;
+  - l'onglet **Diagnostic** : telnet, UPnP, adresse d'unisson, formats, le
+    fuseau (réglage du plugin), les trois horloges et l'écart « comparé à
+    l'heure de ce navigateur », le testeur 5 s / 10 s (son résultat reste
+    60 s dans la liste, et dans la carte « L'heure » jusqu'au test suivant),
+    les conseils ; une pastille sur l'onglet quand quelque chose ne va pas.
+
+  **Limite : le jeton.** L'admin n'envoie pas d'en-tête `Authorization` :
+  si `jeton` est réglé, les routes du réveil lui répondent 401, et la page
+  le dit. Laisser le jeton vide pour se servir de la page (voir la PR du
+  lot 5 pour la correction proposée).
+
+  Les sources sont dans `front/admin-src/` (SFC, primitives `@ds`, sans
+  `<style>`), compilées dans `front/admin/index.js`, qui est versionné :
+
+  ```sh
+  ln -s <checkout unisson>/frontend/node_modules node_modules   # ou npm install
+  npm run build
+  ```
 
 ## Réglages
 
