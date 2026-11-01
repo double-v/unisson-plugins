@@ -138,7 +138,7 @@ ligne de l'alarme de test, qui se supprime toute seule après son passage.
 La liste des alarmes (prochaine occurrence, dernier résultat), le formulaire
 d'une alarme, la séance en cours avec « Arrêter », le diagnostic.
 
-**Prototype validé par l'opérateur le 2026-11-01**, avec ces choix :
+**Prototype validé par l'opérateur le 2026-11-01** (`proto-reveil.html`, à côté), avec ces choix :
 http://192.168.1.116:8101/unisson-plugins/denon-reveil/index.html
 
 - le formulaire s'ouvre sur une page à part (« ‹ Réveil » pour revenir) ;
