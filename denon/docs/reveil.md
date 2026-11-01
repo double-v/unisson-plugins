@@ -69,9 +69,9 @@ Une seule séance à la fois. Une alarme qui part pendant une séance la
 remplace.
 
 1. **Allumer** : `PWON` par le lien, puis le volume de départ (`MV`), puis la
-   source réseau du pilote si R0 montre que l'ampli ne bascule pas seul
-   (`SINET` sur l'AVR-X4000, à confirmer). On prend la main quelle que soit
-   la source.
+   source réseau du pilote s'il en a une. L'AVR-X4000 n'en a pas (R0 du
+   2026-11-01 : il bascule seul, et `SINET` coupe la lecture DLNA). On prend
+   la main quelle que soit la source.
 2. **Attendre que l'ampli soit prêt** : `GetTransportInfo` répond déjà en
    veille, il ne prouve donc rien. On attend le délai de sortie de veille
    mesuré en R0 (pilote : `delai_reveil_s`), puis on réessaie `Play` jusqu'à
@@ -260,6 +260,15 @@ vaut `/settings#reseau`) se préfixe de `/admin`, où l'admin est servie.
 | R0 | recette sur l'ampli : délai de réveil, plafond FLAC, source réseau | l'opérateur |
 
 ## À vérifier pendant la recette (relevé des lots 2 et US1)
+
+- ~~la source réseau (`SINET`)~~ **tranché (R0 du 2026-11-01)** : `SINET`
+  ouvre le menu réseau de l'ampli (« Favorites / Internet Radio ») et coupe
+  le lecteur DLNA (flux lu à 2 Mo, puis `STOPPED` 2 s après `Play`). En UPnP
+  pur, sans commande de source, la même piste joue (`PLAYING` en 3,2 s) :
+  l'ampli bascule seul. Le pilote `avrx4000` n'envoie plus de source
+  (0.4.1), et un `STOPPED` juste après le début d'une piste, notre URI en
+  place, est une lecture refusée : piste suivante (`lecture_refusee`), et
+  `lecture_impossible` après 3 refus de suite ;
 
 - l'ampli accepte-t-il notre DIDL sans `dlna:profileID` sur la pochette
   (Jellyfin met `JPEG_SM`) ;

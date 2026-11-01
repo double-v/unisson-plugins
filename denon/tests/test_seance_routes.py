@@ -63,7 +63,8 @@ async def test_essayer_suivre_puis_arreter(client, faux_ampli, dmr, denon_instal
     assert vue["piste"]["titre"].startswith("Piste ") and vue["piste"]["artiste"] == "Test Artist"
     assert vue["piste"]["album"] == "Album One" and vue["piste"]["pochette"] is None
     assert vue["volume"] == -42 and vue["fin_mode"] == "sans_limite" and vue["fin_prevue"] is None
-    assert faux_ampli.commandes[4:7] == ["PWON", "MV380", "SINET"]
+    assert faux_ampli.commandes[4:6] == ["PWON", "MV380"]
+    assert not [c for c in faux_ampli.commandes if c.startswith("SI") and c != "SI?"]  # R0 : pas de SINET
 
     r = await client.post(f"{RACINE}/seance/arreter", headers=AUTH)
     assert r.status_code == 200
@@ -98,7 +99,7 @@ async def test_le_diagnostic(client, faux_ampli, dmr, denon_installe, adresse):
     assert "http-get:*:audio/x-flac:*" in d["upnp"]["formats"] and len(d["upnp"]["formats"]) == 4
     assert d["adresse_reseau"] == {"reglee": True, "adresse": adresse, "reglage": "/admin/settings#reseau", "message": None}
     assert d["pilote"]["plafond"] == {"frequence_max": 96000, "profondeur_max": 24}
-    assert d["pilote"]["source_reseau"] == "SINET" and d["pilote"]["delai_reveil_s"] == 0
+    assert d["pilote"]["source_reseau"] is None and d["pilote"]["delai_reveil_s"] == 0
     assert {c["code"] for c in d["conseils"]} == {"controle_reseau", "ip_fixe"}
     assert d["horloge"]["fuseau"] == "Europe/Paris" and d["horloge"]["utc"].endswith("Z")
     assert d["seance"] is None

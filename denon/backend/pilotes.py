@@ -40,8 +40,10 @@ class Avrx4000:
     # Le réveil (`seance.py`). Valeurs provisoires, **à confirmer en R0**
     # (recette sur l'ampli, `docs/reveil.md`) :
     # - la commande qui bascule sur la source réseau ; None : on n'en envoie
-    #   aucune (l'ampli bascule seul quand on lui fait jouer un flux) ;
-    source_reseau: str | None = "SINET"
+    #   aucune (l'ampli bascule seul quand on lui fait jouer un flux).
+    #   R0 du 2026-11-01 : SINET ouvre le menu réseau et coupe la lecture
+    #   DLNA ; l'ampli bascule seul ;
+    source_reseau: str | None = None
     # - le temps de sortie de veille avant que `Play` prenne (le réglage
     #   `delai_reveil_s` du plugin le remplace) ;
     delai_reveil_s: float = 8.0
