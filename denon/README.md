@@ -41,6 +41,10 @@ viendra sur ce lien.
   (`http://<nas>:8100/api/state`). Hublot bascule ainsi sans changer une
   ligne. Si le port est pris, l'écoute le journalise et le plugin continue
   sous `/api/plugins/denon/`. Elle ne touche pas aux signaux d'unisson.
+- **Le client UPnP/DLNA** (`backend/dlna.py`, pas encore branché : lot 4 du
+  réveil) : lit la description du lecteur, ses formats (`GetProtocolInfo`),
+  pilote AVTransport et compose le DIDL-Lite d'une piste. Rien de propre à
+  Denon ; testé contre un faux lecteur HTTP nourri de réponses de l'AVR-X4000.
 
 ## Réglages
 
