@@ -35,7 +35,7 @@ Table `plugin_denon.alarmes` (migration du plugin, dans son schéma) :
 | `melange` | bool | playlist seulement : ordre ou mélange |
 | `genre_id`, `format`, `favoris` | | filtres, contexte `bibliotheque` seulement |
 | `volume_depart_db`, `volume_cible_db` | float | -80 à 18 |
-| `montee_s` | int | 0 = volume cible d'emblée |
+| `montee_s` | int | 0 à 3600 (1 h au plus) ; 0 = volume cible d'emblée |
 | `fin_mode` | str | `duree`, `pistes`, `sans_limite` |
 | `fin_valeur` | int ou null | minutes, ou nombre de pistes |
 | `derniere_echeance` | str ISO | l'occurrence traitée en dernier (partie ou manquée) : empêche un double déclenchement (ajout du lot 3) |
@@ -139,8 +139,25 @@ ligne de l'alarme de test, qui se supprime toute seule après son passage.
 ## Les écrans (admin, page « Réveil » dans Extensions)
 
 La liste des alarmes (prochaine occurrence, dernier résultat), le formulaire
-d'une alarme, la séance en cours avec « Arrêter », le diagnostic. **Gate** :
-prototype validé par l'opérateur avant d'écrire les écrans.
+d'une alarme, la séance en cours avec « Arrêter », le diagnostic.
+
+**Prototype validé par l'opérateur le 2026-11-01** (`proto-reveil.html`, à côté), avec ces choix :
+http://192.168.1.116:8101/unisson-plugins/denon-reveil/index.html
+
+- le formulaire s'ouvre sur une page à part (« ‹ Réveil » pour revenir) ;
+- la durée de montée se règle par un curseur, avec des presets de 2, 5, 10
+  et 15 min, jusqu'à 1 h ; une petite courbe dessine la montée ;
+- un avertissement s'affiche quand le volume cible dépasse -15 dB (« fort
+  pour un réveil ») ;
+- le résultat du testeur apparaît à deux endroits : la ligne « Test
+  HH:MM:SS » reste 60 s dans la liste, et le dernier résultat reste dans la
+  carte « L'heure » du diagnostic jusqu'au test suivant ;
+- l'écart d'horloge précise « comparé à l'heure de ce navigateur
+  (<fuseau>) » ;
+- une pastille rouge sur l'onglet Diagnostic quand quelque chose ne va pas.
+
+Le lien vers le réglage de l'adresse réseau (`AdresseReseauNonReglee.reglage`
+vaut `/settings#reseau`) se préfixe de `/admin`, où l'admin est servie.
 
 ## Les lots
 
@@ -151,3 +168,17 @@ prototype validé par l'opérateur avant d'écrire les écrans.
 | 4 | la séance (déroulé ci-dessus), `essayer`, `seance`, `arreter`, `diagnostic` | 2, 3, cœur 0.5 |
 | 5 | les écrans | prototype validé, 3, 4 |
 | R0 | recette sur l'ampli : délai de réveil, plafond FLAC, source réseau | l'opérateur |
+
+## À vérifier pendant la recette (relevé des lots 2 et US1)
+
+- l'ampli accepte-t-il notre DIDL sans `dlna:profileID` sur la pochette
+  (Jellyfin met `JPEG_SM`) ;
+- `SetNextAVTransportURI` enchaîne-t-il les pistes, et `TrackURI` change-t-il
+  au passage ;
+- les codes de faute d'un format refusé (714 ?) et d'un `Play` envoyé en
+  veille ;
+- les états au réveil (`TRANSITIONING` puis `PLAYING`) et le format de
+  `TrackDuration` pendant la lecture ;
+- `OP=01` sur un flux `CI=1`, le suffixe d'extension dans l'URL, la forme du
+  `Range`, la reprise après pause, une sonde en `HEAD`, HTTP/1.0 ou 1.1 ;
+- le plafond FLAC réel et le délai de sortie de veille.

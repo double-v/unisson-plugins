@@ -1,0 +1,1045 @@
+<!-- ghwork-proto: issue=343 debloque= titre=Écrans du réveil Denon (validé par l opérateur le 2026-11-01) -->
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Réveil Denon</title>
+<style>
+@import url("https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap");
+
+/* ---- Indépendant du thème ---------------------------------------------- */
+:root {
+  /* Familles : l'union des deux piles d'avant, dans leur ordre. Elles ne
+     diffèrent que par les polices de repli, qu'on ne voit que si la police
+     web manque un glyphe. */
+  --font-display: "Fraunces", ui-serif, "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
+  --font-sans: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
+
+  /* Tailles de texte — l'ancien `fontSize` Tailwind de l'admin. `-lh` est
+     l'interligne, `-ls` l'approche (les grandes tailles seulement : poser
+     `normal` sur les petites casserait l'approche héritée du parent). */
+  --text-xs: 0.75rem;                                --text-xs-lh: 1.4;
+  --text-sm: 0.875rem;                               --text-sm-lh: 1.5;
+  --text-base: 1rem;                                 --text-base-lh: 1.6;
+  --text-lg: 1.125rem;                               --text-lg-lh: 1.55;
+  --text-xl: 1.375rem;                               --text-xl-lh: 1.4;
+  --text-2xl: clamp(1.625rem, 1.4rem + 1vw, 2rem);   --text-2xl-lh: 1.2;
+  --text-3xl: clamp(2rem, 1.6rem + 1.8vw, 2.75rem);  --text-3xl-lh: 1.1;
+  --text-display: clamp(2.75rem, 2.2rem + 2.4vw, 4.25rem); --text-display-lh: 1.05;
+  --text-xl-ls: -0.015em;
+  --text-2xl-ls: -0.025em;
+  --text-3xl-ls: -0.03em;
+  --text-display-ls: -0.035em;
+
+  /* Espacement — convention usuelle : --space-N = N × 0.25rem. Le point d'une
+     clé devient un tiret (`0.5` → `--space-0-5`). */
+  --space-0: 0;          --space-px: 1px;
+  --space-0-5: 0.125rem; --space-1: 0.25rem;    --space-1-5: 0.375rem;
+  --space-2: 0.5rem;     --space-2-5: 0.625rem; --space-3: 0.75rem;
+  --space-3-5: 0.875rem; --space-4: 1rem;       --space-5: 1.25rem;
+  --space-6: 1.5rem;     --space-7: 1.75rem;    --space-8: 2rem;
+  --space-9: 2.25rem;    --space-10: 2.5rem;    --space-11: 2.75rem;
+  --space-12: 3rem;      --space-14: 3.5rem;    --space-16: 4rem;
+  --space-20: 5rem;      --space-24: 6rem;      --space-28: 7rem;
+  --space-32: 8rem;      --space-36: 9rem;      --space-40: 10rem;
+  --space-44: 11rem;     --space-48: 12rem;     --space-52: 13rem;
+  --space-56: 14rem;     --space-60: 15rem;     --space-64: 16rem;
+  --space-72: 18rem;     --space-80: 20rem;     --space-96: 24rem;
+
+  /* Rayons — nets par défaut, plus ronds sur l'interactif. */
+  --radius-none: 0;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 10px;
+  --radius-full: 9999px;
+
+  /* Mouvement. */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --duration-0: 0ms;
+  --duration-fast: 120ms;
+  --duration-base: 200ms;
+  --duration-slow: 320ms;
+
+  /* Cible tactile minimale (#457, FR-026), commune aux deux apps. Elle se
+     déclenche sur le pointeur, jamais sur la largeur : l'opérateur travaille
+     sur un 24 pouces tactile en 1920. */
+  --touch: 44px;
+  /* La hauteur minimale qu'une primitive interactive lit : `auto` à la
+     souris, `--touch` au doigt ou sous 720 px. La décision vit ici, une fois,
+     plutôt que dans six media queries. */
+  --touch-min: auto;
+}
+
+@media (pointer: coarse), (max-width: 720px) {
+  :root { --touch-min: var(--touch); }
+}
+
+/* Un bloc qui se déclare tactile l'est quel que soit l'écran : le catalogue
+   (US5) montre ainsi les primitives du player telles qu'au doigt, à côté de
+   celles de l'admin à la souris. */
+[data-tactile] { --touch-min: var(--touch); }
+
+/* ---- Clair (défaut) ----------------------------------------------------- */
+/* `[data-theme="light"]` force le clair sur un bloc dans une page sombre :
+   le catalogue (US5) montre les deux thèmes côte à côte. */
+:root,
+[data-theme="light"] {
+  --color-bg:              oklch(0.985 0.006 75);
+  --color-surface:         oklch(1.000 0.000 0);
+  --color-surface-sunken:  oklch(0.955 0.008 75);
+  --color-surface-2:       oklch(0.965 0.008 75);
+  --color-border:          oklch(0.895 0.012 75);
+  --color-border-strong:   oklch(0.785 0.015 75);
+  --color-ink:             oklch(0.205 0.008 60);
+  --color-ink-muted:       oklch(0.395 0.010 65);
+  --color-ink-faint:       oklch(0.605 0.012 70);
+  --color-primary:         oklch(0.550 0.124 60);
+  --color-primary-soft:    oklch(0.910 0.045 70);
+  --color-primary-ink:     oklch(0.310 0.080 55);
+  --color-on-primary:      oklch(0.985 0.006 75);
+  --color-overlay:         oklch(0.205 0.008 60 / 0.35);  /* encre sombre à 35 % */
+  --color-accent:          oklch(0.350 0.060 250);
+  --color-accent-soft:     oklch(0.910 0.025 250);
+  --color-success:         oklch(0.420 0.080 145);
+  --color-success-soft:    oklch(0.910 0.025 145);
+  --color-warning:         oklch(0.500 0.110 60);
+  --color-warning-soft:    oklch(0.910 0.045 60);
+  --color-danger:          oklch(0.420 0.115 25);
+  --color-danger-soft:     oklch(0.910 0.040 25);
+
+  --shadow-sm: 0 1px 2px oklch(0.205 0.008 60 / 0.04);
+  --shadow-md: 0 1px 2px oklch(0.205 0.008 60 / 0.04), 0 2px 6px oklch(0.205 0.008 60 / 0.06);
+  --shadow-lg: 0 1px 3px oklch(0.205 0.008 60 / 0.05), 0 8px 24px oklch(0.205 0.008 60 / 0.08);
+  --shadow-xl: 0 4px 12px oklch(0.205 0.008 60 / 0.06), 0 24px 48px oklch(0.205 0.008 60 / 0.12);
+  --shadow-cover: 0 6px 18px oklch(0.205 0.008 60 / 0.18);
+
+  color-scheme: light;
+}
+
+/* ---- Sombre ------------------------------------------------------------- */
+/* Trois portes, un seul jeu de valeurs : le choix explicite, le défaut sombre
+   du player quand rien n'est choisi (R3), et la préférence du système hors
+   choix clair explicite. Le bloc est répété faute de mixin en CSS natif :
+   c'est la seule répétition admise, et le test de parité vérifie qu'elle
+   reste identique. */
+[data-theme="dark"],
+:root[data-defaut="sombre"]:not([data-theme="light"]) {
+  --color-bg:              oklch(0.165 0.008 60);
+  --color-surface:         oklch(0.205 0.008 60);
+  --color-surface-sunken:  oklch(0.145 0.008 60);
+  --color-surface-2:       oklch(0.175 0.010 60);
+  --color-border:          oklch(0.305 0.010 65);
+  --color-border-strong:   oklch(0.425 0.012 65);
+  --color-ink:             oklch(0.945 0.008 75);
+  --color-ink-muted:       oklch(0.745 0.010 70);
+  --color-ink-faint:       oklch(0.545 0.012 70);
+  --color-primary:         oklch(0.685 0.140 65);
+  --color-primary-soft:    oklch(0.305 0.060 65);
+  --color-primary-ink:     oklch(0.910 0.045 70);
+  --color-on-primary:      oklch(0.165 0.008 60);
+  --color-overlay:         oklch(0.085 0.008 60 / 0.65);  /* presque noir à 65 % */
+  --color-accent:          oklch(0.685 0.080 245);
+  --color-accent-soft:     oklch(0.305 0.030 245);
+  --color-success:         oklch(0.685 0.090 145);
+  --color-success-soft:    oklch(0.305 0.040 145);
+  --color-warning:         oklch(0.745 0.120 60);
+  --color-warning-soft:    oklch(0.305 0.060 60);
+  --color-danger:          oklch(0.665 0.140 25);
+  --color-danger-soft:     oklch(0.305 0.060 25);
+
+  --shadow-sm: 0 1px 2px oklch(0 0 0 / 0.30);
+  --shadow-md: 0 1px 2px oklch(0 0 0 / 0.30), 0 2px 6px oklch(0 0 0 / 0.40);
+  --shadow-lg: 0 1px 3px oklch(0 0 0 / 0.35), 0 8px 24px oklch(0 0 0 / 0.50);
+  --shadow-xl: 0 4px 12px oklch(0 0 0 / 0.40), 0 24px 48px oklch(0 0 0 / 0.60);
+  --shadow-cover: 0 6px 18px oklch(0 0 0 / 0.45);
+
+  color-scheme: dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --color-bg:              oklch(0.165 0.008 60);
+    --color-surface:         oklch(0.205 0.008 60);
+    --color-surface-sunken:  oklch(0.145 0.008 60);
+    --color-surface-2:       oklch(0.175 0.010 60);
+    --color-border:          oklch(0.305 0.010 65);
+    --color-border-strong:   oklch(0.425 0.012 65);
+    --color-ink:             oklch(0.945 0.008 75);
+    --color-ink-muted:       oklch(0.745 0.010 70);
+    --color-ink-faint:       oklch(0.545 0.012 70);
+    --color-primary:         oklch(0.685 0.140 65);
+    --color-primary-soft:    oklch(0.305 0.060 65);
+    --color-primary-ink:     oklch(0.910 0.045 70);
+    --color-on-primary:      oklch(0.165 0.008 60);
+    --color-overlay:         oklch(0.085 0.008 60 / 0.65);  /* presque noir à 65 % */
+    --color-accent:          oklch(0.685 0.080 245);
+    --color-accent-soft:     oklch(0.305 0.030 245);
+    --color-success:         oklch(0.685 0.090 145);
+    --color-success-soft:    oklch(0.305 0.040 145);
+    --color-warning:         oklch(0.745 0.120 60);
+    --color-warning-soft:    oklch(0.305 0.060 60);
+    --color-danger:          oklch(0.665 0.140 25);
+    --color-danger-soft:     oklch(0.305 0.060 25);
+
+    --shadow-sm: 0 1px 2px oklch(0 0 0 / 0.30);
+    --shadow-md: 0 1px 2px oklch(0 0 0 / 0.30), 0 2px 6px oklch(0 0 0 / 0.40);
+    --shadow-lg: 0 1px 3px oklch(0 0 0 / 0.35), 0 8px 24px oklch(0 0 0 / 0.50);
+    --shadow-xl: 0 4px 12px oklch(0 0 0 / 0.40), 0 24px 48px oklch(0 0 0 / 0.60);
+    --shadow-cover: 0 6px 18px oklch(0 0 0 / 0.45);
+
+    color-scheme: dark;
+  }
+}
+</style>
+<style>
+/* Prototype du réveil Denon (plugin denon, unisson#343). Jetons : copie
+   intégrale de frontend-shared/fondations/tokens.css ci-dessus. Les classes
+   ui-* reprennent le dessin des primitives (UiButton, UiChip, UiSwitch,
+   UiField, UiSelect, UiTabs, UiPanel, UiEmpty, UiErrorState, UiSkeleton). */
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--color-bg); color: var(--color-ink);
+  font-family: var(--font-sans); font-size: var(--text-sm); line-height: var(--text-sm-lh);
+  padding: var(--space-6) max(16px, env(safe-area-inset-right, 0px)) var(--space-16) max(16px, env(safe-area-inset-left, 0px));
+}
+.mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.faint { color: var(--color-ink-faint); }
+.muted { color: var(--color-ink-muted); }
+svg.i { width: 1.15em; height: 1.15em; flex: 0 0 auto; }
+[hidden] { display: none !important; }
+
+/* --- Bandeau du prototype : hors produit --- */
+.proto {
+  max-width: 960px; margin: 0 auto var(--space-8);
+  border: 1px dashed var(--color-border-strong); border-radius: var(--radius-lg);
+  padding: var(--space-3) var(--space-4); display: flex; flex-direction: column; gap: var(--space-3);
+}
+.proto__tete { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-2) var(--space-4); }
+.proto__tete strong { font-size: var(--text-xs); letter-spacing: .12em; text-transform: uppercase; color: var(--color-ink-faint); }
+.proto__tete span { color: var(--color-ink-muted); font-size: var(--text-xs); }
+.proto__reglages { display: flex; flex-wrap: wrap; gap: var(--space-3); }
+.proto label { display: flex; flex-direction: column; gap: 2px; font-size: 11px; color: var(--color-ink-faint); font-weight: 600; letter-spacing: .04em; }
+.proto select { font: inherit; font-size: var(--text-xs); font-weight: 400; letter-spacing: 0; color: var(--color-ink); background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-sm); padding: 3px 6px; }
+
+/* --- Cadre de l'app : container query, pour simuler la largeur téléphone --- */
+.cadre { max-width: 960px; margin: 0 auto; container-type: inline-size; }
+.cadre[data-tel] { max-width: 390px; border: 1px solid var(--color-border); border-radius: 18px; padding: var(--space-4) 16px; background: var(--color-bg); }
+
+/* --- En-tête de page de l'admin --- */
+.fil { display: flex; gap: var(--space-1-5); font-size: var(--text-xs); color: var(--color-ink-faint); margin-bottom: var(--space-2); flex-wrap: wrap; }
+.fil a { color: inherit; text-decoration: none; } .fil a:hover { color: var(--color-ink); }
+.page-tete { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: var(--space-4); margin-bottom: var(--space-6); }
+.eyebrow { font-size: var(--text-xs); font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--color-ink-muted); }
+h1.titre { font-family: var(--font-display); font-size: var(--text-3xl); line-height: var(--text-3xl-lh); letter-spacing: var(--text-3xl-ls); font-weight: 600; margin: var(--space-1) 0 0; }
+.page-tete p { margin: var(--space-2) 0 0; color: var(--color-ink-muted); max-width: 60ch; }
+
+/* --- UiButton --- */
+.ui-button { position: relative; display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2); font-family: var(--font-sans); font-weight: 500; border-radius: var(--radius-md); border: 1px solid transparent; cursor: pointer; white-space: nowrap; user-select: none; text-decoration: none; min-height: var(--touch-min);
+  transition: background-color var(--duration-base) var(--ease-out), border-color var(--duration-base) var(--ease-out), color var(--duration-base) var(--ease-out); }
+.ui-button:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+.ui-button:disabled { opacity: .55; cursor: not-allowed; }
+.ui-button--sm { height: var(--space-7); padding: 0 var(--space-3); font-size: var(--text-xs); }
+.ui-button--md { height: var(--space-9); padding: 0 var(--space-4); font-size: var(--text-sm); }
+.ui-button--icon { padding: 0; width: var(--space-7); min-width: var(--touch-min); }
+.ui-button--primary { background: var(--color-primary); color: var(--color-on-primary); border-color: var(--color-primary); }
+.ui-button--primary:hover:not(:disabled) { background: color-mix(in oklch, var(--color-primary) 88%, var(--color-ink)); }
+.ui-button--secondary { background: var(--color-surface); color: var(--color-ink); border-color: var(--color-border-strong); }
+.ui-button--secondary:hover:not(:disabled) { background: var(--color-surface-sunken); border-color: var(--color-ink-faint); }
+.ui-button--ghost { background: transparent; color: var(--color-ink-muted); }
+.ui-button--ghost:hover:not(:disabled) { background: var(--color-surface-sunken); color: var(--color-ink); }
+.ui-button--danger { background: var(--color-surface); color: var(--color-danger); border-color: var(--color-danger-soft); }
+.ui-button--danger:hover:not(:disabled) { background: var(--color-danger-soft); border-color: var(--color-danger); }
+
+/* --- UiChip --- */
+.ui-chip { display: inline-flex; align-items: center; gap: var(--space-1-5); height: 22px; padding: 0 var(--space-2-5); border-radius: var(--radius-full); font-size: 11px; font-weight: 600; letter-spacing: .04em; line-height: 1; white-space: nowrap; border: 1px solid transparent; }
+.ui-chip__dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.ui-chip--neutral { background: var(--color-surface-sunken); color: var(--color-ink-muted); border-color: var(--color-border); }
+.ui-chip--primary { background: var(--color-primary-soft); color: var(--color-primary-ink); }
+.ui-chip--accent { background: var(--color-accent-soft); color: var(--color-accent); }
+.ui-chip--success { background: var(--color-success-soft); color: var(--color-success); }
+.ui-chip--warning { background: var(--color-warning-soft); color: var(--color-warning); }
+.ui-chip--danger { background: var(--color-danger-soft); color: var(--color-danger); }
+.ui-chip--interactive { cursor: pointer; height: var(--space-7); padding: 0 var(--space-3); font-size: var(--text-xs); font-weight: 500; letter-spacing: 0; min-height: var(--touch-min); font-family: inherit; }
+.ui-chip--interactive:hover { border-color: var(--color-border-strong); color: var(--color-ink); }
+.ui-chip--interactive[aria-pressed="true"] { background: var(--color-primary-soft); color: var(--color-primary-ink); border-color: var(--color-primary); }
+.ui-chip--interactive:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+
+/* --- UiSwitch --- */
+.ui-switch { position: relative; flex: 0 0 auto; width: var(--space-10); height: 22px; padding: 0; border-radius: var(--radius-full); border: 1px solid var(--color-border-strong); background: var(--color-surface-sunken); cursor: pointer; transition: background var(--duration-base) var(--ease-out); }
+.ui-switch::after { content: ""; position: absolute; top: var(--space-0-5); left: var(--space-0-5); width: var(--space-4); height: var(--space-4); border-radius: 50%; background: var(--color-surface); box-shadow: var(--shadow-sm); transition: transform var(--duration-base) var(--ease-out); }
+.ui-switch[aria-checked="true"] { background: var(--color-primary); border-color: var(--color-primary); }
+.ui-switch[aria-checked="true"]::after { transform: translateX(18px); }
+.ui-switch:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+.ui-switch::before { content: ""; position: absolute; inset: 50% auto auto 50%; min-width: 100%; width: var(--touch-min); height: var(--touch-min); transform: translate(-50%,-50%); }
+
+/* --- UiField / UiSelect --- */
+.ui-field { display: flex; flex-direction: column; gap: var(--space-1-5); min-width: 0; }
+.ui-field__label { font-size: var(--text-xs); font-weight: 600; letter-spacing: .04em; color: var(--color-ink-muted); }
+.ui-field__control { display: flex; align-items: center; gap: var(--space-2); background: var(--color-surface); border: 1px solid var(--color-border-strong); border-radius: var(--radius-md); padding: 0 var(--space-3); height: var(--space-9); min-height: var(--touch-min); position: relative;
+  transition: border-color var(--duration-base) var(--ease-out), box-shadow var(--duration-base) var(--ease-out); }
+.ui-field__control:focus-within { border-color: var(--color-primary); box-shadow: 0 0 0 3px color-mix(in oklch, var(--color-primary) 20%, transparent); }
+.ui-field__control[data-invalid="true"] { border-color: var(--color-danger); }
+.ui-field__input { flex: 1; border: 0; outline: 0; background: transparent; font: inherit; color: var(--color-ink); font-size: var(--text-sm); padding: 0; min-width: 0; }
+select.ui-field__input { appearance: none; cursor: pointer; padding-right: var(--space-6); }
+.ui-field__chevron { position: absolute; right: var(--space-2-5); width: var(--space-4); height: var(--space-4); color: var(--color-ink-faint); pointer-events: none; }
+.ui-field__suffix { color: var(--color-ink-faint); font-size: var(--text-xs); }
+.ui-field__hint { font-size: var(--text-xs); color: var(--color-ink-faint); }
+.ui-field__error { font-size: var(--text-xs); color: var(--color-danger); }
+
+/* --- UiTabs --- */
+.ui-tabs { display: flex; gap: var(--space-4); box-shadow: inset 0 -1px 0 var(--color-border); margin-bottom: var(--space-6); overflow-x: auto; scrollbar-width: none; }
+.ui-tabs__tab { position: relative; appearance: none; background: transparent; border: 0; padding: var(--space-2-5) 0; flex-shrink: 0; font: inherit; font-size: var(--text-sm); font-weight: 500; color: var(--color-ink-muted); cursor: pointer; display: inline-flex; align-items: center; gap: var(--space-1-5); min-height: var(--touch-min); }
+.ui-tabs__tab:hover { color: var(--color-ink); }
+.ui-tabs__tab[aria-selected="true"] { color: var(--color-ink); font-weight: 600; }
+.ui-tabs__tab[aria-selected="true"]::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 2px; background: var(--color-primary); border-radius: 2px 2px 0 0; }
+.ui-tabs__count { font-family: var(--font-mono); font-size: 11px; color: var(--color-ink-faint); background: var(--color-surface-sunken); padding: 1px var(--space-1-5); border-radius: var(--radius-full); min-width: 18px; text-align: center; }
+.ui-tabs__tab[aria-selected="true"] .ui-tabs__count { background: var(--color-primary-soft); color: var(--color-primary-ink); }
+.pastille-tab { width: 7px; height: 7px; border-radius: 50%; background: var(--color-danger); }
+
+/* --- UiPanel --- */
+.ui-panel { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-lg); overflow: hidden; }
+.ui-panel__header { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-4); padding: var(--space-4) var(--space-4) 0; flex-wrap: wrap; }
+.ui-panel__title { margin: 0; font-family: var(--font-display); font-weight: 600; font-size: var(--text-xl); line-height: var(--text-xl-lh); letter-spacing: -0.02em; }
+.ui-panel__sub { margin: var(--space-1) 0 0; color: var(--color-ink-muted); font-size: var(--text-sm); }
+.ui-panel__body { padding: var(--space-4); }
+.ui-panel__footer { padding: var(--space-3) var(--space-4); border-top: 1px solid var(--color-border); background: var(--color-surface-sunken); display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); font-size: var(--text-xs); color: var(--color-ink-muted); flex-wrap: wrap; }
+.pile { display: flex; flex-direction: column; gap: var(--space-6); }
+
+/* --- UiEmpty / UiErrorState / UiSkeleton --- */
+.ui-empty { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-2-5); padding: var(--space-12) 0; max-width: 68ch; }
+.ui-empty__title { font-family: var(--font-display); font-size: clamp(1.75rem, 1.4rem + 1.2vw, 2.5rem); font-weight: 600; letter-spacing: -0.025em; line-height: 1.1; margin: 0; text-wrap: balance; }
+.ui-empty__description { font-size: var(--text-base); color: var(--color-ink-muted); margin: 0; text-wrap: pretty; }
+.ui-empty__actions { display: flex; gap: var(--space-2-5); margin-top: var(--space-1-5); flex-wrap: wrap; }
+.ui-error-state { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-3); padding: var(--space-12) 0; }
+.ui-error-state__message { font-size: var(--text-base); color: var(--color-danger); margin: 0; }
+.ui-skeleton { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-4) 0; }
+.ui-skeleton__cell { height: 72px; background: var(--color-surface-sunken); border-radius: var(--radius-lg); animation: pulse 2s cubic-bezier(.4,0,.6,1) infinite; }
+@keyframes pulse { 50% { opacity: .5; } }
+
+/* --- Bandeau d'alerte (même dessin que .avert / .s-card__note des protos validés) --- */
+.note { display: flex; gap: var(--space-2-5); align-items: flex-start; padding: var(--space-2-5) var(--space-3-5); border-radius: var(--radius-md); font-size: var(--text-sm); }
+.note svg { margin-top: 2px; }
+.note--info { background: var(--color-accent-soft); } .note--info svg { color: var(--color-accent); }
+.note--warning { background: var(--color-warning-soft); } .note--warning svg { color: var(--color-warning); }
+.note--danger { background: var(--color-danger-soft); } .note--danger svg { color: var(--color-danger); }
+.note a { color: inherit; font-weight: 600; }
+.note__corps { display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; flex: 1; }
+
+/* ======================== Écran : séance en cours ======================== */
+.seance { display: grid; grid-template-columns: auto 1fr auto; gap: var(--space-4); align-items: center; padding: var(--space-4); background: var(--color-surface); border: 1px solid var(--color-primary); border-radius: var(--radius-lg); box-shadow: var(--shadow-md); margin-bottom: var(--space-6); }
+.seance--danger { border-color: var(--color-danger); grid-template-columns: auto 1fr auto; }
+.pochette { width: 72px; height: 72px; border-radius: var(--radius-md); box-shadow: var(--shadow-cover); flex: 0 0 auto; }
+.seance__milieu { min-width: 0; display: flex; flex-direction: column; gap: var(--space-1); }
+.seance__piste { font-weight: 600; font-size: var(--text-base); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.seance__artiste { color: var(--color-ink-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.seance__infos { display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-4); font-size: var(--text-xs); color: var(--color-ink-muted); margin-top: var(--space-1); align-items: center; }
+.vol { display: flex; align-items: center; gap: var(--space-2); }
+.vol__piste { width: 96px; height: 4px; border-radius: 2px; background: var(--color-surface-sunken); overflow: hidden; }
+.vol__rempli { height: 100%; background: var(--color-primary); transition: width .5s linear; }
+.anneau { width: 72px; height: 72px; border-radius: var(--radius-md); background: var(--color-surface-sunken); display: grid; place-items: center; color: var(--color-ink-faint); }
+.tourne { animation: tourne 1.2s linear infinite; } @keyframes tourne { to { transform: rotate(360deg); } }
+
+/* ======================== Écran : liste des alarmes ======================== */
+.liste { display: flex; flex-direction: column; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-lg); overflow: hidden; }
+.alarme { display: grid; grid-template-columns: auto 7.5rem minmax(0,1.4fr) minmax(0,1fr) auto; gap: var(--space-4); align-items: center; padding: var(--space-4); }
+.alarme + .alarme { border-top: 1px solid var(--color-border); }
+.alarme[data-inactive] .alarme__heure, .alarme[data-inactive] .alarme__quoi { color: var(--color-ink-faint); }
+.alarme--test { background: var(--color-surface-2); }
+.alarme__heure { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: var(--text-xl); font-weight: 500; letter-spacing: -0.02em; line-height: 1.1; }
+.alarme__heure small { font-size: var(--text-xs); }
+.alarme__nom { font-weight: 600; font-size: var(--text-sm); margin-top: 2px; }
+.alarme__quoi { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.alarme__quoi .l1 { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.alarme__quoi .l2 { font-size: var(--text-xs); color: var(--color-ink-faint); }
+.jours { display: inline-flex; gap: 2px; margin-top: var(--space-1); }
+.jours span { font-family: var(--font-mono); font-size: 10px; width: 15px; height: 15px; display: grid; place-items: center; border-radius: 3px; color: var(--color-ink-faint); }
+.jours span[data-on] { background: var(--color-primary-soft); color: var(--color-primary-ink); font-weight: 600; }
+.alarme__etat { display: flex; flex-direction: column; gap: var(--space-1-5); align-items: flex-start; min-width: 0; }
+.alarme__etat .ui-chip { white-space: normal; height: auto; min-height: 22px; padding-block: 4px; line-height: 1.25; }
+.alarme__prochaine { font-size: var(--text-xs); color: var(--color-ink-muted); }
+.alarme__prochaine b { color: var(--color-ink); font-weight: 600; }
+.alarme__actions { display: flex; gap: var(--space-1); align-items: center; justify-content: flex-end; }
+.confirme { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); padding: var(--space-2-5) var(--space-3); background: var(--color-danger-soft); border-radius: var(--radius-md); }
+.confirme span { flex: 1; min-width: 12rem; }
+.retour-ligne { grid-column: 1 / -1; }
+.liste-pied { display: flex; flex-wrap: wrap; justify-content: space-between; gap: var(--space-2); margin-top: var(--space-2); font-size: var(--text-xs); color: var(--color-ink-faint); }
+
+@container (max-width: 760px) {
+  .alarme { grid-template-columns: auto 1fr auto; grid-template-areas: "sw heure act" "quoi quoi quoi" "etat etat etat"; row-gap: var(--space-2-5); }
+  .alarme > .c-sw { grid-area: sw; align-self: start; margin-top: 4px; }
+  .alarme > .c-heure { grid-area: heure; }
+  .alarme > .c-quoi { grid-area: quoi; }
+  .alarme > .c-etat { grid-area: etat; flex-direction: row; flex-wrap: wrap; align-items: center; }
+  .alarme > .c-act { grid-area: act; align-self: start; }
+  .alarme .essayer-lib { display: none; }
+  .seance { grid-template-columns: auto 1fr; }
+  .seance > .seance__fin { grid-column: 1 / -1; }
+  .seance > .seance__fin .ui-button { width: 100%; }
+  .page-tete > .ui-button { width: 100%; }
+}
+
+/* ======================== Écran : formulaire ======================== */
+.form { display: flex; flex-direction: column; gap: var(--space-6); }
+.bloc { display: flex; flex-direction: column; gap: var(--space-3); }
+.bloc + .bloc { border-top: 1px solid var(--color-border); padding-top: var(--space-6); }
+.bloc__titre { font-size: var(--text-xs); font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--color-ink-muted); margin: 0; }
+.rangee { display: grid; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); gap: var(--space-4); }
+.rangee--2 { grid-template-columns: minmax(0,2fr) minmax(8rem,1fr); }
+.groupe-chips { display: flex; flex-wrap: wrap; gap: var(--space-1-5); align-items: center; }
+.groupe-chips .sep { width: 1px; height: 20px; background: var(--color-border); margin: 0 var(--space-1); }
+.jour-btn { width: var(--space-9); justify-content: center; padding: 0; }
+.choix { display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: var(--space-2); }
+.choix__opt { display: flex; flex-direction: column; gap: 2px; text-align: left; padding: var(--space-3); border: 1px solid var(--color-border-strong); border-radius: var(--radius-md); background: var(--color-surface); cursor: pointer; font: inherit; color: var(--color-ink); min-height: var(--touch-min); }
+.choix__opt:hover { border-color: var(--color-ink-faint); }
+.choix__opt[aria-checked="true"] { border-color: var(--color-primary); background: var(--color-primary-soft); color: var(--color-primary-ink); box-shadow: inset 0 0 0 1px var(--color-primary); }
+.choix__opt b { font-weight: 600; font-size: var(--text-sm); }
+.choix__opt span { font-size: var(--text-xs); color: var(--color-ink-muted); }
+.choix__opt:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+.sous { padding: var(--space-4); background: var(--color-surface-sunken); border-radius: var(--radius-md); display: flex; flex-direction: column; gap: var(--space-4); }
+.switch-ligne { display: flex; align-items: center; gap: var(--space-3); }
+.resume { font-size: var(--text-sm); color: var(--color-ink-muted); }
+.resume b { color: var(--color-ink); font-weight: 600; }
+input[type=range] { width: 100%; accent-color: var(--color-primary); min-height: var(--touch-min); }
+.curseur { display: flex; flex-direction: column; gap: var(--space-1-5); }
+.curseur__tete { display: flex; justify-content: space-between; align-items: baseline; }
+.courbe { width: 100%; height: 56px; display: block; }
+.axe { display: flex; justify-content: space-between; font-family: var(--font-mono); font-size: 11px; color: var(--color-ink-faint); margin-top: calc(-1 * var(--space-1)); }
+.form-pied { display: flex; flex-wrap: wrap; gap: var(--space-2); justify-content: flex-end; align-items: center; }
+.form-pied .resume { flex: 1; min-width: 14rem; }
+.liste-res { display: flex; flex-direction: column; border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-surface); max-height: 11rem; overflow: auto; }
+.liste-res button { all: unset; cursor: pointer; padding: var(--space-2) var(--space-3); display: flex; justify-content: space-between; gap: var(--space-2); min-height: var(--touch-min); align-items: center; }
+.liste-res button:hover, .liste-res button[aria-selected="true"] { background: var(--color-primary-soft); color: var(--color-primary-ink); }
+.liste-res button + button { border-top: 1px solid var(--color-border); }
+@container (max-width: 760px) {
+  .rangee--2 { grid-template-columns: 1fr; }
+  .form-pied .ui-button { flex: 1; }
+}
+
+/* ======================== Écran : diagnostic ======================== */
+.diag-ligne { display: grid; grid-template-columns: 11rem minmax(0,1fr); gap: var(--space-2) var(--space-4); padding: var(--space-3) var(--space-4); align-items: start; }
+.diag-ligne + .diag-ligne { border-top: 1px solid var(--color-border); }
+.diag-ligne__nom { font-weight: 600; display: flex; align-items: center; gap: var(--space-2); }
+.diag-ligne__val { display: flex; flex-direction: column; gap: var(--space-1-5); align-items: flex-start; min-width: 0; }
+.formats { display: flex; flex-wrap: wrap; gap: var(--space-1); }
+.etat-pt { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; }
+.etat-pt--ok { background: var(--color-success); } .etat-pt--ko { background: var(--color-danger); } .etat-pt--av { background: var(--color-warning); }
+.conseils { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: var(--space-3); }
+.conseils li { display: flex; gap: var(--space-3); align-items: flex-start; }
+.conseils li > svg { margin-top: 3px; color: var(--color-accent); }
+.conseils b { font-weight: 600; }
+.chemin { font-family: var(--font-mono); font-size: 12px; background: var(--color-surface-sunken); padding: 1px 5px; border-radius: var(--radius-sm); }
+.horloges { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: var(--space-3); }
+.horloge { padding: var(--space-3); background: var(--color-surface-sunken); border-radius: var(--radius-md); display: flex; flex-direction: column; gap: 2px; }
+.horloge__lib { font-size: 11px; font-weight: 600; letter-spacing: .04em; color: var(--color-ink-muted); }
+.horloge__h { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: var(--text-xl); font-weight: 500; letter-spacing: -0.02em; }
+.horloge__s { font-size: var(--text-xs); color: var(--color-ink-faint); font-family: var(--font-mono); }
+.ecart { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; }
+.test-boutons { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; }
+.test-res { display: flex; flex-direction: column; gap: var(--space-2); }
+.test-trace { font-family: var(--font-mono); font-size: 12px; color: var(--color-ink-muted); display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-4); }
+@container (max-width: 760px) {
+  .diag-ligne { grid-template-columns: 1fr; }
+  .horloges { grid-template-columns: 1fr; }
+}
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; animation: none !important; } }
+</style>
+</head>
+<body>
+
+<aside class="proto" aria-label="Commandes du prototype">
+  <div class="proto__tete">
+    <strong>Prototype · réveil Denon</strong>
+    <span>Données factices, rien n'est envoyé. Les menus changent l'état montré ; la séance est accélérée (montée en 20 s).</span>
+  </div>
+  <div class="proto__reglages">
+    <label>Alarmes <select id="p-liste"><option value="ok">trois alarmes</option><option value="vide">aucune</option><option value="charge">chargement</option><option value="erreur">erreur de chargement</option></select></label>
+    <label>Séance <select id="p-seance"><option value="aucune">aucune</option><option value="allumage">allumage de l'ampli</option><option value="cours">en cours</option><option value="main">montée interrompue</option><option value="echec">échec au réveil</option></select></label>
+    <label>Ampli <select id="p-diag"><option value="ok">tout répond</option><option value="telnet">telnet coupé</option><option value="upnp">UPnP muet</option><option value="adresse">adresse réseau non réglée</option></select></label>
+    <label>Horloge du serveur <select id="p-horloge"><option value="0">à l'heure</option><option value="192">en avance de 3 min 12 s</option></select></label>
+    <label>Testeur <select id="p-test"><option value="part">l'alarme part</option><option value="rate">l'alarme ne part pas</option></select></label>
+    <label>Thème <select id="p-theme"><option value="">système</option><option value="light">clair</option><option value="dark">sombre</option></select></label>
+    <label>Largeur <select id="p-largeur"><option value="">libre</option><option value="tel">téléphone (390 px)</option></select></label>
+  </div>
+</aside>
+
+<div class="cadre" id="cadre">
+  <nav class="fil" aria-label="Fil d'Ariane"><a href="#">Extensions</a><span>›</span><a href="#">Denon</a><span>›</span><span id="fil-fin">Réveil</span></nav>
+  <div id="app"></div>
+</div>
+
+<script>
+/* ---------- Icônes ---------- */
+const I = {
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  play: '<path d="M7 5v14l11-7z"/>',
+  edit: '<path d="M4 20h4L19 9l-4-4L4 16z"/><path d="m13.5 6.5 4 4"/>',
+  trash: '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/>',
+  stop: '<rect x="6" y="6" width="12" height="12" rx="1.5"/>',
+  alert: '<path d="M12 3 2 20h20L12 3z"/><path d="M12 10v4M12 17h.01"/>',
+  info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/>',
+  check: '<path d="M5 12.5 10 17l9-10"/>',
+  back: '<path d="M15 6l-6 6 6 6"/>',
+  chevron: '<path d="m7 10 5 5 5-5"/>',
+  spin: '<path d="M12 3a9 9 0 1 0 9 9"/>',
+  clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+  link: '<path d="M10 14 21 3M15 3h6v6M19 14v6H4V5h6"/>',
+};
+const ic = (n, cls='i') => `<svg class="${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${I[n]}</svg>`;
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+/* ---------- Données factices ---------- */
+const PLAYLISTS = [{id:3, nom:'Matins doux', n:42}, {id:4, nom:'Café crème', n:18}, {id:5, nom:'Brouillon', n:0}];
+const GENRES = ['Jazz','Classique','Folk','Soul','Électro','Rock'];
+const FORMATS = ['FLAC','ALAC','MP3','AAC','WAV'];
+const ARTISTES = [{id:11, nom:'Nina Simone', n:214}, {id:12, nom:'Nick Drake', n:38}, {id:13, nom:'Bill Evans', n:156}, {id:14, nom:'Agnes Obel', n:52}, {id:15, nom:'Nils Frahm', n:97}];
+const ALBUMS = [{id:21, nom:'Pink Moon', art:'Nick Drake'}, {id:22, nom:'Kind of Blue', art:'Miles Davis'}, {id:23, nom:'Philharmonics', art:'Agnes Obel'}, {id:24, nom:'Waltz for Debby', art:'Bill Evans'}];
+const PISTES = [
+  {t:'Northern Sky', a:'Nick Drake', al:'Bryter Layter', h:35},
+  {t:'Here Comes the Sun', a:'Nina Simone', al:'Here Comes the Sun', h:85},
+  {t:'Riverside', a:'Agnes Obel', al:'Philharmonics', h:220},
+  {t:'Peace Piece', a:'Bill Evans', al:'Everybody Digs Bill Evans', h:265},
+  {t:'Says', a:'Nils Frahm', al:'Spaces', h:300},
+];
+const JOURS = ['L','M','M','J','V','S','D'];
+const JOURS_LONGS = ['lundi','mardi','mercredi','jeudi','vendredi','samedi','dimanche'];
+
+let alarmes = [
+  {id:1, nom:'Semaine', active:true, heure:'07:00', jours:31, contexte:'playlist', contexte_id:3, melange:true, genre:'', format:'', favoris:false,
+   dep:-50, cib:-32, montee:120, fin_mode:'duree', fin_valeur:30, res:{code:'joue', quand:'vendredi 7:00'}},
+  {id:2, nom:'Week-end', active:true, heure:'09:30', jours:96, contexte:'bibliotheque', contexte_id:null, melange:false, genre:'Jazz', format:'FLAC', favoris:true,
+   dep:-55, cib:-35, montee:300, fin_mode:'pistes', fin_valeur:5, res:{code:'ampli_injoignable', quand:'hier 9:30'}},
+  {id:3, nom:'Mercredi tôt', active:true, heure:'06:15', jours:4, contexte:'artiste', contexte_id:11, melange:false, genre:'', format:'', favoris:false,
+   dep:-45, cib:-30, montee:60, fin_mode:'sans_limite', fin_valeur:null, res:{code:'adresse_reseau_non_reglee', quand:'mercredi 6:15'}},
+  {id:4, nom:'Sieste', active:false, heure:'14:30', jours:0, contexte:'album', contexte_id:21, melange:false, genre:'', format:'', favoris:false,
+   dep:-45, cib:-40, montee:0, fin_mode:'duree', fin_valeur:20, res:{code:'manquee', quand:'27 oct. 14:30'}},
+];
+let prochainId = 10;
+
+const RESULTATS = {
+  joue:                      {ton:'success', lib:'Jouée'},
+  arretee:                   {ton:'neutral', lib:'Arrêtée à la main'},
+  reprise:                   {ton:'neutral', lib:'Reprise en main'},
+  ampli_injoignable:         {ton:'danger',  lib:'Ampli injoignable'},
+  upnp_muet:                 {ton:'danger',  lib:'Lecteur UPnP muet'},
+  adresse_reseau_non_reglee: {ton:'warning', lib:'Adresse réseau non réglée'},
+  manquee:                   {ton:'warning', lib:'Manquée'},
+  playlist_vide:             {ton:'warning', lib:'Rien à jouer'},
+  jamais:                    {ton:'neutral', lib:'Pas encore partie'},
+};
+const AIDE_RESULTAT = {
+  ampli_injoignable: "L'ampli n'a pas répondu en telnet. Voir le diagnostic.",
+  adresse_reseau_non_reglee: "L'ampli ne sait pas où chercher la musique : réglez l'adresse réseau d'unisson.",
+  manquee: "unisson était arrêté à l'heure prévue, et a redémarré plus de 10 min après.",
+};
+
+/* ---------- État ---------- */
+const S = {
+  vue: 'liste',           // liste | form
+  onglet: 'alarmes',      // alarmes | diagnostic
+  edition: null,          // copie de l'alarme en cours d'édition
+  erreurs: {},
+  confirmeSuppr: null,
+  retourLigne: {},        // id -> message après « Essayer »
+  seance: null,
+  seanceArretee: null,
+  fuseau: 'Europe/Paris',
+  test: null,             // {id, cible, label, dans, etat, retard, trace}
+};
+const P = id => document.getElementById(id).value;
+
+/* ---------- Heures ---------- */
+const pad = n => String(n).padStart(2,'0');
+const hm = s => { const [h,m] = s.split(':'); return `${+h}:${m}`; };
+const db = v => (v < 0 ? '−' : v > 0 ? '+' : '') + Math.abs(v).toFixed(1).replace('.', ',').replace(',0','') + ' dB';
+const duree = s => s === 0 ? "d'emblée" : s >= 3600 ? '1 h' : s < 60 ? `${s} s` : (s % 60 ? `${Math.floor(s/60)} min ${s%60} s` : `${s/60} min`);
+const bitDuJour = d => d.getDay() === 0 ? 64 : 1 << (d.getDay() - 1);
+
+function prochaine(a, now = new Date()) {
+  if (!a.active) return null;
+  const [h, m, s = 0] = a.heure.split(':').map(Number);
+  for (let k = 0; k < 8; k++) {
+    const d = new Date(now); d.setDate(d.getDate() + k); d.setHours(h, m, s, 0);
+    if (d <= now) continue;
+    if (a.jours === 0 || (a.jours & bitDuJour(d))) {
+      const j = k === 0 ? "aujourd'hui" : k === 1 ? 'demain' : JOURS_LONGS[(d.getDay()+6)%7];
+      return `${j} ${h}:${pad(m)}${s ? ':' + pad(s) : ''}`;
+    }
+  }
+  return null;
+}
+function libJours(j) {
+  if (j === 0) return 'une seule fois';
+  if (j === 127) return 'tous les jours';
+  if (j === 31) return 'en semaine';
+  if (j === 96) return 'le week-end';
+  return JOURS_LONGS.filter((_, i) => j & (1 << i)).join(', ');
+}
+function quoi(a) {
+  if (a.contexte === 'playlist') { const p = PLAYLISTS.find(x => x.id === a.contexte_id); return [`Playlist « ${p ? p.nom : '?'} »`, a.melange ? 'mélangée' : "dans l'ordre"]; }
+  if (a.contexte === 'artiste') { const p = ARTISTES.find(x => x.id === a.contexte_id); return [p ? `Tirage : ${p.nom}` : 'Tirage : artiste à choisir', 'un artiste']; }
+  if (a.contexte === 'album') { const p = ALBUMS.find(x => x.id === a.contexte_id); return [p ? `Album « ${p.nom} »` : 'Album à choisir', p ? p.art : '']; }
+  const f = [a.genre || 'tous genres', a.format || 'tous formats']; if (a.favoris) f.push('favoris');
+  return ['Tirage dans la bibliothèque', f.join(' · ')];
+}
+function fin(a) {
+  if (a.fin_mode === 'duree') return `${a.fin_valeur} min puis veille`;
+  if (a.fin_mode === 'pistes') return `${a.fin_valeur} piste${a.fin_valeur > 1 ? 's' : ''} puis veille`;
+  return 'sans limite';
+}
+
+/* Horloge : heure murale dans un fuseau (pour l'écart, on compare des heures murales). */
+function partsTz(date, tz) {
+  const o = {}; new Intl.DateTimeFormat('en-GB', {timeZone: tz, hourCycle:'h23', year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', second:'2-digit'})
+    .formatToParts(date).forEach(p => o[p.type] = p.value);
+  return o;
+}
+const murale = (date, tz) => { const o = partsTz(date, tz); return Date.UTC(+o.year, o.month-1, +o.day, +o.hour, +o.minute, +o.second); };
+const hms = (date, tz) => { const o = partsTz(date, tz); return `${o.hour}:${o.minute}:${o.second}`; };
+function decalage(date, tz) {
+  const n = new Intl.DateTimeFormat('en-US', {timeZone: tz, timeZoneName: 'longOffset'}).formatToParts(date).find(p => p.type === 'timeZoneName').value;
+  return n === 'GMT' ? '+00:00' : n.replace('GMT', '');
+}
+const navTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+const serveurMaintenant = () => new Date(Date.now() + (+P('p-horloge')) * 1000);
+function ecart() { return (murale(serveurMaintenant(), S.fuseau) - murale(new Date(), navTz)) / 1000; }
+function libEcart(s) {
+  const a = Math.abs(Math.round(s));
+  if (a < 2) return 'moins de 1 s';
+  const h = Math.floor(a/3600), m = Math.floor(a%3600/60), r = a%60;
+  return [h && `${h} h`, m && `${m} min`, (r && !h) && `${r} s`].filter(Boolean).join(' ');
+}
+
+/* ---------- Rendu : petits morceaux ---------- */
+const chip = (ton, txt, dot = true) => `<span class="ui-chip ui-chip--${ton}">${dot ? '<span class="ui-chip__dot"></span>' : ''}${txt}</span>`;
+const btn = (variant, txt, attrs = '', icone = '', size = 'sm') => `<button type="button" class="ui-button ui-button--${size} ui-button--${variant}" ${attrs}>${icone ? ic(icone) : ''}${txt}</button>`;
+const sel = (id, options, val, attrs = '') => `<span class="ui-field__control"><select class="ui-field__input" id="${id}" ${attrs}>${options.map(([v, l]) => `<option value="${esc(v)}" ${String(v) === String(val) ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>${ic('chevron','ui-field__chevron')}</span>`;
+function pochette(h) { return `<svg class="pochette" viewBox="0 0 72 72" aria-hidden="true"><defs><linearGradient id="g${h}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="oklch(0.62 0.11 ${h})"/><stop offset="1" stop-color="oklch(0.32 0.07 ${h+40})"/></linearGradient></defs><rect width="72" height="72" rx="6" fill="url(#g${h})"/><circle cx="52" cy="22" r="10" fill="oklch(0.92 0.05 ${h})" opacity=".55"/></svg>`; }
+
+/* ======================== Séance ======================== */
+function demarrerSeance(a, opts = {}) {
+  S.seanceArretee = null;
+  S.seance = {alarme: a, debut: Date.now(), piste: opts.piste || 0, main: false, etape: opts.etape || 'cours', test: !!opts.test};
+}
+function vueSeance() {
+  if (S.seanceArretee) return `<div class="note note--info" style="margin-bottom:var(--space-6)" role="status">${ic('info')}<div class="note__corps"><span>Séance « ${esc(S.seanceArretee)} » arrêtée. L'ampli reste allumé, sur sa source réseau.</span></div>${btn('ghost','Fermer','data-act="fermer-arret"')}</div>`;
+  const s = S.seance; if (!s) return '';
+  const a = s.alarme;
+  if (s.etape === 'echec') return `<section class="seance seance--danger" aria-label="Séance">
+      <div class="anneau" style="color:var(--color-danger)">${ic('alert')}</div>
+      <div class="seance__milieu"><span class="eyebrow">Réveil « ${esc(a.nom)} » · ${hm(a.heure)}</span>
+        <span class="seance__piste">L'ampli n'a pas répondu</span>
+        <span class="seance__artiste">Trois essais de mise en marche par telnet, sans réponse. Rien n'a joué.</span></div>
+      <div class="seance__fin" style="display:flex;gap:var(--space-2)">${btn('secondary','Voir le diagnostic','data-act="onglet" data-o="diagnostic"','','md')}${btn('ghost','Fermer','data-act="fermer-seance"','','md')}</div></section>`;
+  if (s.etape === 'allumage') return `<section class="seance" aria-label="Séance en cours">
+      <div class="anneau">${ic('spin','i tourne')}</div>
+      <div class="seance__milieu"><span class="eyebrow">Réveil « ${esc(a.nom)} » · démarrage</span>
+        <span class="seance__piste">Allumage de l'ampli…</span>
+        <span class="seance__artiste">Sortie de veille, volume à ${db(a.dep)}, puis lecture (essai 1 sur 3).</span></div>
+      <div class="seance__fin">${btn('danger','Arrêter','data-act="arreter"','stop','md')}</div></section>`;
+  const p = PISTES[s.piste % PISTES.length];
+  const ecoule = (Date.now() - s.debut) / 1000;
+  const progres = a.montee === 0 ? 1 : Math.min(1, ecoule / 20);
+  let vol = a.dep + (a.cib - a.dep) * progres; vol = Math.round(vol * 2) / 2;
+  if (s.main) vol = -38;
+  const monte = !s.main && progres < 1;
+  const plage = Math.abs(a.cib - a.dep) || 1;
+  const pct = s.main ? 60 : Math.round(progres * 100);
+  let finTxt;
+  if (a.fin_mode === 'duree') { const d = new Date(s.debut + a.fin_valeur * 60000); finTxt = `fin à ${d.getHours()}:${pad(d.getMinutes())}, puis veille`; }
+  else if (a.fin_mode === 'pistes') finTxt = `piste ${Math.min(s.piste+1, a.fin_valeur)} sur ${a.fin_valeur}, puis veille`;
+  else finTxt = 'sans limite : jusqu\'à ce qu\'on arrête';
+  const volTxt = s.main ? `<span>Volume ${db(vol)} · <b style="color:var(--color-ink)">montée interrompue</b>, réglé à la main</span>`
+    : monte ? `<span>Volume <b class="mono" style="color:var(--color-ink)">${db(vol)}</b> → ${db(a.cib)}</span>` : `<span>Volume ${db(vol)}, atteint</span>`;
+  return `<section class="seance" aria-label="Séance en cours" aria-live="polite">
+    ${pochette(p.h)}
+    <div class="seance__milieu"><span class="eyebrow">${s.test ? 'Test' : 'Réveil'} « ${esc(a.nom)} » · en cours</span>
+      <span class="seance__piste">${esc(p.t)}</span>
+      <span class="seance__artiste">${esc(p.a)} · ${esc(p.al)}</span>
+      <div class="seance__infos">
+        <span class="vol"><span class="vol__piste" aria-hidden="true"><span class="vol__rempli" style="width:${pct}%"></span></span>${volTxt}</span>
+        <span>${ic('clock')} ${finTxt}</span>
+      </div></div>
+    <div class="seance__fin">${btn('danger','Arrêter','data-act="arreter"','stop','md')}</div></section>`;
+}
+
+/* ======================== Liste ======================== */
+function ligneAlarme(a) {
+  const [l1, l2] = quoi(a);
+  const p = prochaine(a);
+  const r = RESULTATS[a.res?.code || 'jamais'];
+  let etat;
+  if (a.test) {
+    const t = S.test;
+    if (t.etat === 'attente') { const reste = Math.max(0, Math.ceil((t.cible - Date.now())/1000)); etat = `${chip('accent', reste ? `part dans ${reste} s` : 'échéance passée, on attend…')}<span class="alarme__prochaine">à <b class="mono">${t.label}</b> (${S.fuseau})</span>`; }
+    else if (t.etat === 'partie') etat = `${chip('success', `partie à ${t.label}`)}<span class="alarme__prochaine">avec ${t.retard.toFixed(1).replace('.',',')} s de retard${t.ampli ? ` · ${t.ampli}` : ''}</span>`;
+    else etat = `${chip('danger', 'pas partie')}<span class="alarme__prochaine">attendue à ${t.label}, rien à ${t.labelPlus}</span>`;
+  } else {
+    etat = `<span class="alarme__prochaine">${p ? `Prochaine : <b>${p}</b>` : a.jours === 0 && !a.active ? 'Passée, désactivée' : 'Désactivée'}</span>
+      <span title="${esc(AIDE_RESULTAT[a.res?.code] || '')}" style="display:inline-flex;flex-wrap:wrap;gap:var(--space-1-5);align-items:center">${chip(r.ton, r.lib)}${a.res?.quand ? `<span class="faint" style="font-size:var(--text-xs)">${a.res.quand}</span>` : ''}</span>`;
+  }
+  const jours = a.jours === 0 ? `<span class="faint" style="font-size:var(--text-xs)">une seule fois</span>`
+    : `<span class="jours" aria-label="${libJours(a.jours)}">${JOURS.map((j, i) => `<span ${a.jours & (1<<i) ? 'data-on' : ''}>${j}</span>`).join('')}</span>`;
+  const actions = a.test ? `<div class="alarme__actions c-act">${btn('ghost', 'Retirer', `data-act="retirer-test"`)}</div>`
+    : `<div class="alarme__actions c-act">
+      ${btn('secondary', '<span class="essayer-lib">Essayer maintenant</span>', `data-act="essayer" data-id="${a.id}" aria-label="Essayer « ${esc(a.nom)} » maintenant"`, 'play')}
+      <button type="button" class="ui-button ui-button--sm ui-button--ghost ui-button--icon" data-act="modifier" data-id="${a.id}" aria-label="Modifier « ${esc(a.nom)} »">${ic('edit')}</button>
+      <button type="button" class="ui-button ui-button--sm ui-button--ghost ui-button--icon" data-act="supprimer" data-id="${a.id}" aria-label="Supprimer « ${esc(a.nom)} »">${ic('trash')}</button></div>`;
+  const confirme = S.confirmeSuppr === a.id ? `<div class="confirme" role="alert"><span>Supprimer l'alarme « ${esc(a.nom)} » ? Elle ne sonnera plus.</span>${btn('ghost','Annuler','data-act="annuler-suppr"')}${btn('danger','Supprimer',`data-act="confirmer-suppr" data-id="${a.id}"`,'trash')}</div>` : '';
+  const retour = S.retourLigne[a.id] ? `<div class="retour-ligne note note--danger" role="alert">${ic('alert')}<div class="note__corps">${S.retourLigne[a.id]}</div></div>` : '';
+  return `<div class="alarme ${a.test ? 'alarme--test' : ''}" ${a.active ? '' : 'data-inactive'}>
+    <span class="c-sw">${a.test ? `<span class="ui-chip ui-chip--accent" style="padding:0 var(--space-2)">Test</span>` : `<button type="button" role="switch" class="ui-switch" aria-checked="${a.active}" data-act="basculer" data-id="${a.id}" aria-label="Alarme « ${esc(a.nom)} » active"></button>`}</span>
+    <div class="c-heure"><div class="alarme__heure">${a.test ? `${S.test.label.slice(0,5)}<small>${S.test.label.slice(5)}</small>` : hm(a.heure)}</div><div class="alarme__nom">${esc(a.nom)}</div>${jours}</div>
+    <div class="alarme__quoi c-quoi"><span class="l1">${esc(l1)}</span><span class="l2">${esc(l2)} · ${db(a.dep)} → ${db(a.cib)} ${a.montee ? 'en ' + duree(a.montee) : "d'emblée"} · ${fin(a)}</span></div>
+    <div class="alarme__etat c-etat">${etat}</div>
+    ${actions}${confirme}${retour}</div>`;
+}
+function vueAlarmes() {
+  const mode = P('p-liste');
+  if (mode === 'charge') return `<div class="ui-skeleton" aria-busy="true"><div class="ui-skeleton__cell"></div><div class="ui-skeleton__cell"></div><div class="ui-skeleton__cell"></div></div>`;
+  if (mode === 'erreur') return `<div class="ui-error-state" role="alert"><p class="ui-error-state__message">Les alarmes n'ont pas pu être chargées : le plugin Denon ne répond pas (503).</p>${btn('secondary','Réessayer','data-act="reessayer"','','md')}</div>`;
+  const liste = mode === 'vide' ? alarmes.filter(a => a.test) : alarmes;
+  if (!liste.length) return `<div class="ui-empty"><span class="eyebrow">Réveil</span><h2 class="ui-empty__title">Aucune alarme pour l'instant</h2>
+    <p class="ui-empty__description">Une alarme allume l'ampli à l'heure dite, monte doucement le volume et joue une playlist ou un tirage de la bibliothèque.</p>
+    <div class="ui-empty__actions">${btn('primary','Nouvelle alarme','data-act="nouvelle"','plus','md')}${btn('secondary','Vérifier l\'ampli d\'abord','data-act="onglet" data-o="diagnostic"','','md')}</div></div>`;
+  const actives = liste.filter(a => a.active && !a.test).length;
+  return `<div class="liste">${liste.map(ligneAlarme).join('')}</div>
+    <div class="liste-pied"><span>${actives} alarme${actives > 1 ? 's' : ''} active${actives > 1 ? 's' : ''} · heures en ${S.fuseau}</span><span>Si unisson redémarre moins de 10 min après l'heure, l'alarme part en retard ; au-delà, elle est manquée.</span></div>`;
+}
+
+/* ======================== Diagnostic ======================== */
+function vueDiagnostic() {
+  const d = P('p-diag');
+  const tel = d !== 'telnet', upnp = d !== 'upnp' && d !== 'telnet', adr = d !== 'adresse';
+  const ligne = (ok, nom, val) => `<div class="diag-ligne"><div class="diag-ligne__nom"><span class="etat-pt etat-pt--${ok}"></span>${nom}</div><div class="diag-ligne__val">${val}</div></div>`;
+  const formats = upnp ? `<div class="formats">${['FLAC','ALAC','WAV','AIFF','MP3','AAC','WMA'].map(f => chip('neutral', f, false)).join('')}</div>
+      <span class="faint" style="font-size:var(--text-xs)">Annoncés par <span class="mono">GetProtocolInfo</span>. Plafond mesuré : FLAC 24 bits / 96 kHz ; au-delà, unisson transcode.</span>`
+    : `<span class="faint">Inconnus tant que le lecteur UPnP ne répond pas.</span>`;
+  const panneauEtat = `<section class="ui-panel" aria-labelledby="d-etat">
+    <div class="ui-panel__header"><div><h2 class="ui-panel__title" id="d-etat">L'ampli</h2><p class="ui-panel__sub">Denon AVR-X4000 · <span class="mono">192.168.1.50</span></p></div>${btn('secondary','Relancer le diagnostic','data-act="rediag"')}</div>
+    <div style="padding-top:var(--space-3)">
+      ${ligne(tel ? 'ok' : 'ko', 'Telnet', tel ? `${chip('success','Connecté')}<span class="faint mono" style="font-size:var(--text-xs)">192.168.1.50:23 · réponse en 38 ms</span>`
+        : `${chip('danger','Déconnecté')}<span class="muted">Dernier contact il y a 2 h 14. L'ampli est peut-être en veille profonde : voir le premier conseil.</span>`)}
+      ${ligne(upnp ? 'ok' : 'ko', 'Lecteur UPnP', upnp ? `${chip('success','Joignable')}<span class="faint mono" style="font-size:var(--text-xs)">http://192.168.1.50:8080 · MediaRenderer:1</span>`
+        : `${chip('danger','Muet')}<span class="muted">Aucune réponse sur <span class="mono">http://192.168.1.50:8080/description.xml</span>.</span>`)}
+      ${ligne(adr ? 'ok' : 'av', 'Adresse d\'unisson', adr ? `${chip('success','Réglée')}<span class="faint mono" style="font-size:var(--text-xs)">http://192.168.1.116:8090</span>`
+        : `${chip('warning','Non réglée')}<span class="muted">L'ampli va chercher la musique lui-même : il lui faut l'adresse d'unisson sur le réseau local.</span><a class="ui-button ui-button--sm ui-button--secondary" href="/settings#reseau">${ic('link')}Régler dans Réglages › Réseau</a>`)}
+      ${ligne(upnp ? 'ok' : 'av', 'Formats', formats)}
+    </div></section>`;
+  const conseils = `<section class="ui-panel" aria-labelledby="d-cons">
+    <div class="ui-panel__header"><div><h2 class="ui-panel__title" id="d-cons">Réglages de l'ampli</h2><p class="ui-panel__sub">À faire une fois, sur l'ampli et sur la box.</p></div></div>
+    <div class="ui-panel__body"><ul class="conseils">
+      <li>${ic('info')}<div><b>Garder le contrôle réseau en veille.</b> Sinon l'ampli coupe le réseau en veille, et l'alarme ne peut pas l'allumer.<br><span class="chemin">Configuration › Réseau › Contrôle IP › Toujours activé</span></div></li>
+      <li>${ic('info')}<div><b>Donner une IP fixe à l'ampli.</b> Réservez son adresse dans la box (bail DHCP statique), pour qu'elle ne change pas d'une nuit à l'autre.<br><span class="faint">Adresse actuelle : <span class="mono">192.168.1.50</span></span></div></li>
+    </ul></div></section>`;
+  return `<div class="pile">${panneauEtat}${vueHorloge()}${conseils}</div>`;
+}
+function vueHorloge() {
+  const sn = serveurMaintenant(), nav = new Date();
+  const e = ecart(), alerte = Math.abs(e) > 60;
+  const fuseaux = ['Europe/Paris','Europe/Brussels','Europe/London','UTC','America/Montreal','Indian/Reunion'];
+  const t = S.test;
+  let res = '';
+  if (t) {
+    const reste = Math.max(0, Math.ceil((t.cible - Date.now())/1000));
+    const ligne = t.etat === 'attente' ? chip('accent', reste ? `part dans ${reste} s` : 'échéance passée, on attend…')
+      : t.etat === 'partie' ? chip('success', `partie à ${t.label}, avec ${t.retard.toFixed(1).replace('.',',')} s de retard`)
+      : chip('danger', `pas partie : attendue à ${t.label}`);
+    res = `<div class="test-res" aria-live="polite"><span class="faint" style="font-size:var(--text-xs)">Dernier test${t.etat !== 'attente' && !alarmes.some(a => a.test) ? ' (ligne retirée de la liste, le résultat reste ici jusqu\'au test suivant)' : ''}</span><div style="display:flex;flex-wrap:wrap;gap:var(--space-2);align-items:center">${ligne}${t.etat === 'partie' && t.ampli ? `<span class="muted">L'heure est bonne, ${t.ampli.replace(/^mais /,'mais ')}.</span>` : t.etat === 'partie' ? '<span class="muted">Le fuseau et l\'horloge sont bons.</span>' : ''}</div>
+      <div class="test-trace"><span>créée « ${t.nom} »</span><span>serveur ${t.trace.serveur} ${t.trace.dec}</span><span>UTC ${t.trace.utc}</span><span>échéance ${t.label}</span></div>
+      ${t.etat === 'rate' ? `<div class="note note--danger">${ic('alert')}<div class="note__corps"><span>L'ordonnanceur n'a pas déclenché l'alarme. Vérifiez le fuseau ci-dessus, puis les journaux <span class="mono">unisson.plugin.denon</span>.</span></div></div>` : ''}</div>`;
+  }
+  return `<section class="ui-panel" aria-labelledby="d-h">
+    <div class="ui-panel__header"><div><h2 class="ui-panel__title" id="d-h">L'heure</h2><p class="ui-panel__sub">Les alarmes suivent l'heure du serveur, dans le fuseau réglé.</p></div></div>
+    <div class="ui-panel__body pile" style="gap:var(--space-4)">
+      <div class="rangee--2" style="display:grid;gap:var(--space-4);grid-template-columns:minmax(0,18rem)">
+        <label class="ui-field"><span class="ui-field__label">Fuseau</span>${sel('fuseau', fuseaux.map(f => [f, f === 'Europe/Paris' ? 'Europe/Paris (par défaut)' : f]), S.fuseau)}<span class="ui-field__hint">Réglage du plugin, utilisé pour toutes les alarmes.</span></label>
+      </div>
+      <div class="horloges">
+        <div class="horloge"><span class="horloge__lib">Serveur, ${S.fuseau}</span><span class="horloge__h" data-h="srv">${hms(sn, S.fuseau)}</span><span class="horloge__s">${decalage(sn, S.fuseau)}</span></div>
+        <div class="horloge"><span class="horloge__lib">Serveur, UTC</span><span class="horloge__h" data-h="utc">${hms(sn, 'UTC')}</span><span class="horloge__s">+00:00</span></div>
+        <div class="horloge"><span class="horloge__lib">Ce navigateur</span><span class="horloge__h" data-h="nav">${hms(nav, navTz)}</span><span class="horloge__s">${navTz} ${decalage(nav, navTz)}</span></div>
+      </div>
+      <div class="ecart" data-h="ecart">${alerte ? '' : chip('success', `Écart : ${libEcart(e)}`)}</div>
+      ${alerte ? `<div class="note note--warning" role="alert">${ic('alert')}<div class="note__corps"><b>L'horloge ou le fuseau du serveur ne correspond pas.</b><span>Le serveur est ${e > 0 ? 'en avance' : 'en retard'} de ${libEcart(e)} sur ce navigateur. Les alarmes partiront à l'heure du serveur. Vérifiez le fuseau, ou la synchronisation NTP de la machine.</span><span class="faint" style="font-size:var(--text-xs)">Comparé à l'heure de ce navigateur (${navTz}).</span></div></div>` : ''}
+      <div class="bloc" style="gap:var(--space-2-5)">
+        <h3 class="bloc__titre">Tester le fuseau</h3>
+        <p class="muted" style="margin:0;max-width:62ch">Crée une alarme unique qui part par l'ordonnanceur, comme une vraie, avec les réglages de « ${esc(alarmes.find(a => !a.test)?.nom || 'tirage de la bibliothèque')} », volume bas, fin après 1 piste. Elle se retire seule après son passage.</p>
+        <div class="test-boutons">${btn('secondary','Tester dans 5 s',`data-act="tester" data-s="5" ${t && t.etat === 'attente' ? 'disabled' : ''}`,'clock','md')}${btn('secondary','Tester dans 10 s',`data-act="tester" data-s="10" ${t && t.etat === 'attente' ? 'disabled' : ''}`,'clock','md')}</div>
+        ${res}
+      </div>
+    </div></section>`;
+}
+
+/* ======================== Formulaire ======================== */
+const neuve = () => ({id:null, nom:'', active:true, heure:'07:00', jours:31, contexte:'playlist', contexte_id:3, melange:false, genre:'', format:'', favoris:false, dep:-50, cib:-32, montee:120, fin_mode:'duree', fin_valeur:30, res:{code:'jamais'}});
+function valider(e) {
+  const er = {};
+  if (!e.nom.trim()) er.nom = 'Donnez un nom à l\'alarme, par exemple « Semaine ».';
+  if (!/^\d{2}:\d{2}(:\d{2})?$/.test(e.heure)) er.heure = 'Heure attendue au format HH:MM.';
+  if (e.contexte === 'playlist' && PLAYLISTS.find(p => p.id === +e.contexte_id)?.n === 0) er.contexte = 'Cette playlist est vide : l\'alarme n\'aurait rien à jouer.';
+  if ((e.contexte === 'artiste' || e.contexte === 'album') && !e.contexte_id) er.contexte = e.contexte === 'artiste' ? 'Choisissez un artiste.' : 'Choisissez un album.';
+  if (e.fin_mode !== 'sans_limite' && !(e.fin_valeur > 0)) er.fin = 'Indiquez une valeur supérieure à 0.';
+  return er;
+}
+function vueForm() {
+  const e = S.edition, er = S.erreurs;
+  const jourBtns = JOURS.map((j, i) => `<button type="button" class="ui-chip ui-chip--interactive ui-chip--neutral jour-btn" aria-pressed="${!!(e.jours & (1<<i))}" data-act="jour" data-b="${1<<i}" aria-label="${JOURS_LONGS[i]}">${j}</button>`).join('');
+  const raccourci = (v, l) => `<button type="button" class="ui-chip ui-chip--interactive ui-chip--neutral" aria-pressed="${e.jours === v}" data-act="jours" data-v="${v}">${l}</button>`;
+  const opt = (groupe, v, titre, sous) => `<button type="button" role="radio" class="choix__opt" aria-checked="${e[groupe] === v}" data-act="choix" data-g="${groupe}" data-v="${v}"><b>${titre}</b><span>${sous}</span></button>`;
+  let sousContexte = '';
+  if (e.contexte === 'playlist') sousContexte = `<div class="rangee">
+      <label class="ui-field"><span class="ui-field__label">Playlist</span>${sel('f-pl', PLAYLISTS.map(p => [p.id, `${p.nom} (${p.n} pistes)`]), e.contexte_id, `data-champ="contexte_id" ${er.contexte ? 'aria-invalid="true"' : ''}`)}${er.contexte ? `<span class="ui-field__error">${er.contexte}</span>` : ''}</label>
+      <div class="ui-field"><span class="ui-field__label">Ordre</span><div class="groupe-chips">
+        <button type="button" class="ui-chip ui-chip--interactive ui-chip--neutral" aria-pressed="${!e.melange}" data-act="melange" data-v="0">Dans l'ordre</button>
+        <button type="button" class="ui-chip ui-chip--interactive ui-chip--neutral" aria-pressed="${e.melange}" data-act="melange" data-v="1">Mélangée</button></div></div></div>`;
+  else if (e.contexte === 'bibliotheque') sousContexte = `<div class="rangee">
+      <label class="ui-field"><span class="ui-field__label">Genre</span>${sel('f-genre', [['','Tous les genres'], ...GENRES.map(g => [g,g])], e.genre, 'data-champ="genre"')}</label>
+      <label class="ui-field"><span class="ui-field__label">Format</span>${sel('f-format', [['','Tous les formats'], ...FORMATS.map(g => [g,g])], e.format, 'data-champ="format"')}</label>
+      <div class="ui-field"><span class="ui-field__label">Favoris</span><div class="switch-ligne" style="min-height:var(--space-9)"><button type="button" role="switch" class="ui-switch" aria-checked="${e.favoris}" data-act="favoris" aria-labelledby="lib-fav"></button><span id="lib-fav">Favoris seulement</span></div></div></div>
+      <span class="ui-field__hint">${e.genre === 'Classique' && e.format === 'WAV' && e.favoris ? '<span style="color:var(--color-warning)">Aucune piste ne correspond à ces filtres.</span>' : `Environ ${e.favoris ? 120 : 1840} pistes correspondent. Le tirage suit les mêmes règles que l'aléatoire du player.`}</span>`;
+  else if (e.contexte === 'artiste') {
+    const q = (S.recherche || '').toLowerCase();
+    const res = ARTISTES.filter(a => a.nom.toLowerCase().includes(q));
+    sousContexte = `<label class="ui-field"><span class="ui-field__label">Artiste</span><span class="ui-field__control" ${er.contexte ? 'data-invalid="true"' : ''}><input class="ui-field__input" id="f-rech" placeholder="Chercher un artiste" value="${esc(S.recherche || '')}" autocomplete="off"></span>${er.contexte ? `<span class="ui-field__error">${er.contexte}</span>` : ''}</label>
+      <div class="liste-res" role="listbox" aria-label="Artistes">${res.length ? res.map(a => `<button type="button" role="option" aria-selected="${e.contexte_id === a.id}" data-act="pick" data-id="${a.id}"><span>${a.nom}</span><span class="faint mono">${a.n} pistes</span></button>`).join('') : '<span class="faint" style="padding:var(--space-3)">Aucun artiste ne correspond.</span>'}</div>`;
+  } else sousContexte = `<label class="ui-field"><span class="ui-field__label">Album</span>${sel('f-al', [['', 'Choisir un album'], ...ALBUMS.map(a => [a.id, `${a.nom} — ${a.art}`])], e.contexte_id || '', `data-champ="contexte_id"`)}${er.contexte ? `<span class="ui-field__error">${er.contexte}</span>` : `<span class="ui-field__hint">Joué dans l'ordre des pistes.</span>`}</label>`;
+
+  const apercu = Object.assign({}, e, {active:true});
+  const p = prochaine(apercu);
+  return `<div class="page-tete"><div>
+      <button type="button" class="ui-button ui-button--sm ui-button--ghost" data-act="retour" style="margin-left:calc(-1 * var(--space-3))">${ic('back')}Réveil</button>
+      <h1 class="titre">${e.id ? `Modifier « ${esc(e.nom || 'sans nom')} »` : 'Nouvelle alarme'}</h1></div></div>
+    ${S.erreurServeur ? `<div class="note note--danger" role="alert" style="margin-bottom:var(--space-4)">${ic('alert')}<div class="note__corps"><b>Enregistrement refusé par le serveur.</b><span>${S.erreurServeur}</span></div></div>` : ''}
+    <form class="ui-panel" novalidate onsubmit="return false"><div class="ui-panel__body form">
+      <div class="bloc"><h2 class="bloc__titre">Quand</h2>
+        <div class="rangee rangee--2">
+          <label class="ui-field"><span class="ui-field__label">Nom</span><span class="ui-field__control" ${er.nom ? 'data-invalid="true"' : ''}><input class="ui-field__input" data-champ="nom" value="${esc(e.nom)}" placeholder="Semaine" ${er.nom ? 'aria-invalid="true"' : ''}></span>${er.nom ? `<span class="ui-field__error">${er.nom}</span>` : ''}</label>
+          <label class="ui-field"><span class="ui-field__label">Heure</span><span class="ui-field__control" ${er.heure ? 'data-invalid="true"' : ''}><input class="ui-field__input mono" type="time" data-champ="heure" value="${e.heure}"></span>${er.heure ? `<span class="ui-field__error">${er.heure}</span>` : `<span class="ui-field__hint">Heure de ${S.fuseau}</span>`}</label>
+        </div>
+        <div class="ui-field"><span class="ui-field__label">Jours</span>
+          <div class="groupe-chips" role="group" aria-label="Jours">${jourBtns}<span class="sep" aria-hidden="true"></span>${raccourci(31,'Semaine')}${raccourci(96,'Week-end')}${raccourci(127,'Tous')}${raccourci(0,'Une seule fois')}</div>
+          <span class="ui-field__hint">${e.jours === 0 ? 'Une seule fois : l\'alarme se désactive après son passage. ' : ''}${p ? `Prochaine : <b style="color:var(--color-ink)">${p}</b>` : ''}</span></div>
+      </div>
+
+      <div class="bloc"><h2 class="bloc__titre">Ce qui se joue</h2>
+        <div class="choix" role="radiogroup" aria-label="Ce qui se joue">
+          ${opt('contexte','playlist','Une playlist','dans l\'ordre ou mélangée')}
+          ${opt('contexte','bibliotheque','La bibliothèque','tirage, avec filtres')}
+          ${opt('contexte','artiste','Un artiste','tirage dans ses pistes')}
+          ${opt('contexte','album','Un album','du début')}
+        </div>
+        <div class="sous">${sousContexte}</div>
+      </div>
+
+      <div class="bloc"><h2 class="bloc__titre">Volume</h2>
+        <div class="rangee">
+          <div class="curseur"><div class="curseur__tete"><label class="ui-field__label" for="f-dep">Volume de départ</label><span class="mono" id="v-dep"></span></div><input type="range" id="f-dep" min="-80" max="18" step="0.5" value="${e.dep}" data-champ="dep" data-num></div>
+          <div class="curseur"><div class="curseur__tete"><label class="ui-field__label" for="f-cib">Volume cible</label><span class="mono" id="v-cib"></span></div><input type="range" id="f-cib" min="-80" max="18" step="0.5" value="${e.cib}" data-champ="cib" data-num><span class="ui-field__hint" id="v-fort" style="color:var(--color-warning)" hidden>Fort pour un réveil : l'ampli affiche −15 dB comme un volume déjà soutenu.</span></div>
+        </div>
+        <div class="curseur">
+          <div class="curseur__tete"><label class="ui-field__label" for="f-montee">Durée de la montée</label><span class="mono" id="v-montee"></span></div>
+          <div class="groupe-chips" role="group" aria-label="Durées courantes">${PRESETS_MONTEE.map(m => `<button type="button" class="ui-chip ui-chip--interactive ui-chip--neutral" aria-pressed="${e.montee === m}" data-act="montee" data-v="${m}">${m === 0 ? 'Aucune' : duree(m)}</button>`).join('')}</div>
+          <input type="range" id="f-montee" min="0" max="3600" step="30" value="${e.montee}" data-champ="montee" data-num aria-valuetext="${e.montee === 0 ? 'aucune' : duree(e.montee)}">
+          <div id="v-courbe"></div>
+          <div class="axe" aria-hidden="true"><span>0</span><span>15 min</span><span>30 min</span><span>45 min</span><span>1 h</span></div>
+        </div>
+        <span class="ui-field__hint" id="v-hint"></span>
+      </div>
+
+      <div class="bloc"><h2 class="bloc__titre">Fin</h2>
+        <div class="choix" role="radiogroup" aria-label="Fin">
+          ${opt('fin_mode','duree','Après une durée','puis veille de l\'ampli')}
+          ${opt('fin_mode','pistes','Après un nombre de pistes','puis veille de l\'ampli')}
+          ${opt('fin_mode','sans_limite','Sans limite','jusqu\'à ce qu\'on arrête')}
+        </div>
+        ${e.fin_mode === 'sans_limite' ? '<span class="ui-field__hint">Le tirage se relance quand il s\'épuise. L\'ampli reste allumé.</span>'
+          : `<label class="ui-field" style="max-width:12rem"><span class="ui-field__label">${e.fin_mode === 'duree' ? 'Durée' : 'Nombre de pistes'}</span><span class="ui-field__control" ${er.fin ? 'data-invalid="true"' : ''}><input class="ui-field__input mono" type="number" min="1" data-champ="fin_valeur" data-num value="${e.fin_valeur ?? ''}"><span class="ui-field__suffix">${e.fin_mode === 'duree' ? 'min' : 'pistes'}</span></span>${er.fin ? `<span class="ui-field__error">${er.fin}</span>` : ''}</label>`}
+      </div>
+    </div>
+    <div class="ui-panel__footer form-pied">
+      <span class="resume">${resumeForm(e)}</span>
+      ${btn('ghost','Annuler','data-act="retour"','','md')}${btn('primary','Enregistrer','data-act="enregistrer"','','md')}
+    </div></form>
+    <p class="faint" style="font-size:var(--text-xs);margin-top:var(--space-3)">Prototype : enregistrer avec la playlist « Brouillon » ou sans nom montre les erreurs de saisie ; avec le nom « refus », l'erreur du serveur.</p>`;
+}
+/* Volume : les curseurs ne sont pas re-rendus pendant qu'on les tire ; seuls les libellés et la courbe suivent. */
+const PRESETS_MONTEE = [0, 120, 300, 600, 900];
+function courbeSvg(e) {
+  const y = v => 50 - (v + 80) / 98 * 44;
+  const xM = e.montee / 3600 * 1000;
+  return `<svg class="courbe" viewBox="0 0 1000 56" preserveAspectRatio="none" aria-hidden="true">
+      <line x1="0" x2="1000" y1="50" y2="50" stroke="var(--color-border)" vector-effect="non-scaling-stroke"/>
+      ${[250,500,750].map(x => `<line x1="${x}" x2="${x}" y1="46" y2="54" stroke="var(--color-border)" vector-effect="non-scaling-stroke"/>`).join('')}
+      <path d="M0 ${y(e.dep)} L${xM} ${y(e.cib)} L1000 ${y(e.cib)}" fill="none" stroke="var(--color-primary)" stroke-width="2" vector-effect="non-scaling-stroke"/></svg>`;
+}
+function majVolume() {
+  const e = S.edition, q = id => document.getElementById(id);
+  if (!q('v-dep')) return;
+  const fort = e.cib > -15;
+  q('v-dep').textContent = db(e.dep);
+  q('v-cib').textContent = db(e.cib);
+  q('v-cib').style.color = fort ? 'var(--color-warning)' : '';
+  q('v-fort').hidden = !fort;
+  q('v-montee').textContent = e.montee === 0 ? "aucune : volume cible d'emblée" : duree(e.montee);
+  q('v-courbe').innerHTML = courbeSvg(e);
+  q('v-hint').textContent = "Par pas de 0,5 dB. La montée s'arrête si quelqu'un touche au volume." + (e.dep > e.cib ? ' Le départ est plus fort que la cible : le volume descendra.' : '');
+  document.querySelectorAll('[data-act="montee"]').forEach(b => b.setAttribute('aria-pressed', +b.dataset.v === e.montee));
+  const r = document.querySelector('.resume'); if (r) r.innerHTML = resumeForm(e);
+}
+function resumeForm(e) {
+  const [l1, l2] = quoi(e);
+  return `<b>${e.heure ? hm(e.heure) : '—'}</b> ${libJours(e.jours)} · ${esc(l1)} (${esc(l2)}) · ${db(e.dep)} → ${db(e.cib)} ${e.montee ? 'en ' + duree(e.montee) : ''} · ${fin(e)}`;
+}
+
+/* ======================== Page ======================== */
+function render() {
+  const app = document.getElementById('app');
+  const focusId = document.activeElement?.id, selStart = document.activeElement?.selectionStart;
+  document.getElementById('fil-fin').textContent = S.vue === 'form' ? (S.edition.id ? 'Modifier' : 'Nouvelle alarme') : 'Réveil';
+  if (S.vue === 'form') { app.innerHTML = vueForm(); majVolume(); }
+  else {
+    const diagKo = P('p-diag') !== 'ok';
+    const nb = P('p-liste') === 'ok' ? alarmes.filter(a => !a.test).length : 0;
+    app.innerHTML = `<div class="page-tete"><div><span class="eyebrow">Denon · AVR-X4000</span><h1 class="titre">Réveil</h1>
+        <p>L'ampli s'allume à l'heure dite, sur une playlist ou un tirage de la bibliothèque, et le volume monte doucement.</p></div>
+        ${P('p-liste') === 'ok' ? btn('primary','Nouvelle alarme','data-act="nouvelle"','plus','md') : ''}</div>
+      ${vueSeance()}
+      <div class="ui-tabs" role="tablist">
+        <button class="ui-tabs__tab" role="tab" aria-selected="${S.onglet === 'alarmes'}" data-act="onglet" data-o="alarmes">Alarmes <span class="ui-tabs__count">${nb}</span></button>
+        <button class="ui-tabs__tab" role="tab" aria-selected="${S.onglet === 'diagnostic'}" data-act="onglet" data-o="diagnostic">Diagnostic ${diagKo || Math.abs(ecart()) > 60 ? '<span class="pastille-tab" aria-label="à vérifier"></span>' : ''}</button>
+      </div>
+      <div role="tabpanel">${S.onglet === 'alarmes' ? vueAlarmes() : vueDiagnostic()}</div>`;
+  }
+  if (focusId) { const el = document.getElementById(focusId); if (el) { el.focus(); try { if (selStart != null) el.setSelectionRange(selStart, selStart); } catch (_) {} } }
+}
+
+/* Horloges et compte à rebours : mise à jour légère chaque seconde, sans re-rendu. */
+setInterval(() => {
+  const t = S.test;
+  if (t && t.etat === 'attente' && !t.declenche && Date.now() >= t.cible) {
+    if (P('p-test') === 'part') {
+      t.declenche = true;
+      t.retard = 0.2 + Math.random() * 0.5;
+      setTimeout(() => {
+        t.etat = 'partie';
+        const d = P('p-diag');
+        if (d === 'telnet') t.ampli = 'mais ampli injoignable';
+        else if (d === 'adresse') t.ampli = 'mais adresse réseau non réglée : rien n\'a joué';
+        else if (d === 'upnp') t.ampli = 'mais lecteur UPnP muet : rien n\'a joué';
+        else { const base = alarmes.find(a => !a.test); demarrerSeance(Object.assign({}, base || neuve(), {nom: t.nom, dep:-60, cib:-45, montee:30, fin_mode:'pistes', fin_valeur:1}), {test:true}); }
+        t.retrait = Date.now() + 60000;
+        render();
+      }, t.retard * 1000);
+    } else if (Date.now() >= t.cible + 10000) { t.etat = 'rate'; t.retrait = Date.now() + 60000; }
+  }
+  if (t && t.retrait && Date.now() > t.retrait) { retirerTest(); }
+  if (S.vue === 'liste' && (S.onglet === 'diagnostic' || (t && t.etat === 'attente') || (S.seance && S.seance.etape === 'cours'))) {
+    if (document.activeElement && document.activeElement.tagName === 'SELECT') return;
+    render();
+  }
+}, 1000);
+function retirerTest() { alarmes = alarmes.filter(a => !a.test); if (S.test) S.test.retrait = null; render(); }
+
+/* ---------- Interactions ---------- */
+document.addEventListener('click', ev => {
+  const b = ev.target.closest('[data-act]'); if (!b) return;
+  const act = b.dataset.act, id = +b.dataset.id;
+  const a = alarmes.find(x => x.id === id);
+  switch (act) {
+    case 'onglet': S.onglet = b.dataset.o; break;
+    case 'basculer': a.active = !a.active; break;
+    case 'nouvelle': S.edition = neuve(); S.erreurs = {}; S.erreurServeur = null; S.recherche = ''; S.vue = 'form'; window.scrollTo(0,0); break;
+    case 'modifier': S.edition = JSON.parse(JSON.stringify(a)); S.erreurs = {}; S.erreurServeur = null; S.recherche = ''; S.vue = 'form'; window.scrollTo(0,0); break;
+    case 'retour': S.vue = 'liste'; break;
+    case 'supprimer': S.confirmeSuppr = id; break;
+    case 'annuler-suppr': S.confirmeSuppr = null; break;
+    case 'confirmer-suppr': alarmes = alarmes.filter(x => x.id !== id); S.confirmeSuppr = null; break;
+    case 'essayer': {
+      delete S.retourLigne[id];
+      const d = P('p-diag');
+      if (d === 'telnet') { a.res = {code:'ampli_injoignable', quand:"à l'instant"}; S.retourLigne[id] = `<b>Rien n'a joué : l'ampli ne répond pas en telnet.</b><span>Vérifiez qu'il est branché et que le contrôle réseau reste actif en veille. <a href="#" data-act="onglet" data-o="diagnostic">Voir le diagnostic</a></span>`; break; }
+      if (d === 'adresse') { a.res = {code:'adresse_reseau_non_reglee', quand:"à l'instant"}; S.retourLigne[id] = `<b>L'ampli s'est allumé, mais ne peut pas lire la musique.</b><span>L'adresse d'unisson sur le réseau n'est pas réglée. <a href="/settings#reseau">Régler dans Réglages › Réseau</a></span>`; break; }
+      if (d === 'upnp') { a.res = {code:'upnp_muet', quand:"à l'instant"}; S.retourLigne[id] = `<b>L'ampli s'est allumé, mais son lecteur réseau ne répond pas.</b><span>Port 8080 injoignable. <a href="#" data-act="onglet" data-o="diagnostic">Voir le diagnostic</a></span>`; break; }
+      demarrerSeance(a, {etape:'allumage'});
+      setTimeout(() => { if (S.seance && S.seance.alarme === a) { S.seance.etape = 'cours'; S.seance.debut = Date.now(); a.res = {code:'joue', quand:"à l'instant"}; render(); } }, 2500);
+      window.scrollTo({top: 0, behavior: 'smooth'});
+      break;
+    }
+    case 'arreter': S.seanceArretee = S.seance.alarme.nom; S.seance = null; document.getElementById('p-seance').value = 'aucune'; break;
+    case 'fermer-arret': S.seanceArretee = null; break;
+    case 'fermer-seance': S.seance = null; document.getElementById('p-seance').value = 'aucune'; break;
+    case 'reessayer': document.getElementById('p-liste').value = 'charge'; render(); setTimeout(() => { document.getElementById('p-liste').value = 'ok'; render(); }, 1200); return;
+    case 'rediag': break;
+    case 'tester': {
+      const n = +b.dataset.s, sn = serveurMaintenant();
+      const cibleSrv = new Date(sn.getTime() + n * 1000);
+      const label = hms(cibleSrv, S.fuseau);
+      alarmes = alarmes.filter(x => !x.test);
+      const base = alarmes[0] || neuve();
+      const ta = Object.assign({}, base, {id: ++prochainId, test:true, nom:`Test ${label}`, active:true, jours:0, heure: label, dep:-60, cib:-45, montee:30, fin_mode:'pistes', fin_valeur:1});
+      alarmes.unshift(ta);
+      S.test = {id: ta.id, nom: ta.nom, label, labelPlus: hms(new Date(cibleSrv.getTime() + 10000), S.fuseau), cible: Date.now() + n * 1000, etat:'attente',
+        trace: {serveur: hms(sn, S.fuseau), dec: decalage(sn, S.fuseau), utc: hms(sn, 'UTC')}};
+      break;
+    }
+    case 'retirer-test': retirerTest(); return;
+    /* formulaire */
+    case 'jour': S.edition.jours ^= +b.dataset.b; break;
+    case 'jours': S.edition.jours = +b.dataset.v; break;
+    case 'choix': {
+      const g = b.dataset.g, v = b.dataset.v; S.edition[g] = v;
+      if (g === 'contexte') S.edition.contexte_id = v === 'playlist' ? 3 : null;
+      if (g === 'fin_mode') S.edition.fin_valeur = v === 'duree' ? 30 : v === 'pistes' ? 5 : null;
+      delete S.erreurs.contexte; delete S.erreurs.fin; break;
+    }
+    case 'montee': S.edition.montee = +b.dataset.v; document.getElementById('f-montee').value = S.edition.montee; majVolume(); ev.preventDefault(); return;
+    case 'melange': S.edition.melange = b.dataset.v === '1'; break;
+    case 'favoris': S.edition.favoris = !S.edition.favoris; break;
+    case 'pick': S.edition.contexte_id = id; S.recherche = ARTISTES.find(x => x.id === id).nom; delete S.erreurs.contexte; break;
+    case 'enregistrer': {
+      S.erreurs = valider(S.edition); S.erreurServeur = null;
+      if (Object.keys(S.erreurs).length) break;
+      if (S.edition.nom.trim().toLowerCase() === 'refus') { S.erreurServeur = 'Le genre « Jazz » n\'existe plus dans la bibliothèque (422). Choisissez un autre filtre.'; break; }
+      const e = S.edition;
+      if (e.id) alarmes = alarmes.map(x => x.id === e.id ? e : x); else { e.id = ++prochainId; alarmes.push(e); }
+      S.vue = 'liste'; S.onglet = 'alarmes'; break;
+    }
+    default: return;
+  }
+  ev.preventDefault();
+  render();
+});
+document.addEventListener('input', ev => {
+  const el = ev.target;
+  if (el.id === 'f-rech') { S.recherche = el.value; S.edition.contexte_id = null; render(); return; }
+  if (!el.dataset || !el.dataset.champ || S.vue !== 'form') return;
+  let v = el.value; if (el.dataset.num !== undefined) v = v === '' ? null : +v;
+  if (el.dataset.champ === 'contexte_id') v = v === '' ? null : +v;
+  S.edition[el.dataset.champ] = v;
+  if (el.type === 'range') { el.setAttribute('aria-valuetext', el.id === 'f-montee' ? (v === 0 ? 'aucune' : duree(v)) : db(v)); majVolume(); }
+  else if (el.tagName === 'SELECT') render();
+  else { const r = document.querySelector('.resume'); if (r) r.innerHTML = resumeForm(S.edition); }
+});
+document.addEventListener('change', ev => {
+  const el = ev.target;
+  if (el.id === 'fuseau') { S.fuseau = el.value; render(); return; }
+  if (el.closest('.proto')) {
+    if (el.id === 'p-theme') { el.value ? document.documentElement.setAttribute('data-theme', el.value) : document.documentElement.removeAttribute('data-theme'); return; }
+    if (el.id === 'p-largeur') { const c = document.getElementById('cadre'); if (el.value) { c.setAttribute('data-tel',''); c.setAttribute('data-tactile',''); } else { c.removeAttribute('data-tel'); c.removeAttribute('data-tactile'); } return; }
+    if (el.id === 'p-seance') {
+      const v = el.value, a = alarmes.find(x => !x.test) || neuve();
+      S.seanceArretee = null;
+      if (v === 'aucune') S.seance = null;
+      else { demarrerSeance(a, {etape: v === 'main' ? 'cours' : v, piste: 1}); if (v === 'main') S.seance.main = true; }
+    }
+    if (el.id === 'p-diag') S.retourLigne = {};
+    S.vue = 'liste'; render();
+  }
+});
+render();
+</script>
+</body>
+</html>

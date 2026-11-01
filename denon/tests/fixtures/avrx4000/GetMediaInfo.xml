@@ -1,0 +1,17 @@
+<s:Envelope
+		xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"
+		s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
+	<s:Body>
+		<u:GetMediaInfoResponse xmlns:u="urn:schemas-upnp-org:service:AVTransport:1">
+			<NrTracks>0</NrTracks>
+			<MediaDuration>0:00:00</MediaDuration>
+			<CurrentURI></CurrentURI>
+			<CurrentURIMetaData></CurrentURIMetaData>
+			<NextURI><DIDL-Lite xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dlna="urn:schemas-dlna-org:metadata-1-0/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/" xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/"><item restricted="1" id="6020c385657e49dcc214261e3d20e3f5" parentID="2632645bf2df6690a7d64e0b754c8545"><dc:title>Je chante la France</dc:title><upnp:class>object</NextURI>
+			<NextURIMetaData>&lt;DIDL-Lite xmlns:dc=&quot;http://purl.org/dc/elements/1.1/&quot; xmlns:dlna=&quot;urn:schemas-dlna-org:metadata-1-0/&quot; xmlns:upnp=&quot;urn:schemas-upnp-org:metadata-1-0/upnp/&quot; xmlns=&quot;urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/&quot;&gt;&lt;item restricted=&quot;1&quot; id=&quot;6020c385657e49dcc214261e3d20e3f5&quot; parentID=&quot;2632645bf2df6690a7d64e0b754c8545&quot;&gt;&lt;dc:title&gt;Je chante la France&lt;/dc:title&gt;&lt;upnp:class&gt;object.item.audioItem.musicTrack&lt;/upnp:class&gt;&lt;dc:date&gt;2006-01-01&lt;/dc:date&gt;&lt;upnp:artist&gt;Rocé&lt;/upnp:artist&gt;&lt;dc:creator&gt;Rocé&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;Rocé&lt;/upnp:artist&gt;&lt;upnp:album&gt;Identité en crescendo&lt;/upnp:album&gt;&lt;upnp:originalTrackNumber&gt;1&lt;/upnp:originalTrackNumber&gt;&lt;res duration=&quot;00:03:34.9066670&quot; size=&quot;37998278&quot; nrAudioChannels=&quot;2&quot; sampleFrequency=&quot;44100&quot; bitrate=&quot;1411200&quot; protocolInfo=&quot;http-get:*:audio/wav:DLNA.ORG_OP=01;DLNA.ORG_CI=0;DLNA.ORG_FLAGS=01D00000000000000000000000000000&quot;&gt;http://192.168.1.136:8096/dlna/audio/6020c385-657e-49dc-c214-261e3d20e3f5/stream.wav?DeviceProfileId=78d51bfd5c484d769e551504f1cf6f97&amp;amp;DeviceId=00000000-0000-0000-0000-000000000000&amp;amp;MediaSourceId=6020c385657e49dcc214261e3d20e3f5&amp;amp;Static=true&amp;amp;Tag=bb76a42e0facbc8e674fd8ddc57bde14&amp;amp;dlnaheaders=true&lt;/res&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_SM&quot;&gt;http://192.168.1.136:8096/Items/6020c385657e49dcc214261e3d20e3f5/Images/Primary/0/c834d0b080ebbc0ca2fac11863e60beb/jpg/480/480/0/0&lt;/upnp:albumArtURI&gt;&lt;upnp:icon&gt;http://192.168.1.136:8096/Items/6020c385657e49dcc214261e3d20e3f5/Images/Primary/0/c834d0b080ebbc0ca2fac11863e60beb/jpg/48/48/0/0&lt;/upnp:icon&gt;&lt;/item&gt;&lt;/DIDL-Lite&gt;</NextURIMetaData>
+			<PlayMedium>NONE</PlayMedium>
+			<RecordMedium>NOT_IMPLEMENTED</RecordMedium>
+			<WriteStatus>NOT_IMPLEMENTED</WriteStatus>
+		</u:GetMediaInfoResponse>
+	</s:Body>
+</s:Envelope>
