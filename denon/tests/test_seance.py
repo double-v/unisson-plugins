@@ -20,12 +20,12 @@ from denon.backend import alarmes
 from denon.backend.dlna import LecteurDlna
 from denon.backend.lien import Config, Lien
 from denon.backend.ordonnanceur import Ordonnanceur
-from denon.backend.pilotes import PILOTES
+from denon.backend.pilotes import PILOTES, Avrx4000
 from denon.backend.seance import Cadence, Seances
 from denon.tests.aides import attendre, port_libre
 from denon.tests.aides_reveil import PARIS, Horloge, a_paris, alarme, relire
 
-CADENCE = Cadence(suivi_s=0.1, minute_s=1.0, attente_lien_s=0.5, essais_play=3, attente_play_s=0.5,
+CADENCE = Cadence(suivi_s=0.1, minute_s=1.0, attente_lien_s=0.5, essais_play=3, attente_play_s=0.5, refus_s=0.1,
                   arret_s=1.0, marge_fin_s=0.3, budget_arret_s=2.0)
 
 
@@ -72,9 +72,9 @@ async def banc(client, table, faux_ampli, dmr):
     taches, bancs = [], []
 
     async def fabriquer(cadence: Cadence = CADENCE, delai: float = 0.05, port: int | None = None,
-                        session=None) -> Banc:
+                        session=None, pilote=None) -> Banc:
         faux_ampli.echo = True
-        lien = Lien(lambda: Config("127.0.0.1", port or faux_ampli.port, 0.01), PILOTES["avrx4000"],
+        lien = Lien(lambda: Config("127.0.0.1", port or faux_ampli.port, 0.01), pilote or PILOTES["avrx4000"],
                     attente_min=0.05, attente_max=0.2)
         taches.append(asyncio.create_task(lien.tourner()))
         if port is None:
@@ -153,6 +153,29 @@ def url_de(adresse: str, piste: int) -> str:
     return f"{adresse}/api/flux/{piste}/original.flac"
 
 
+def _coeur_07() -> bool:
+    from unisson.plugin import VERSION_COEUR
+
+    return tuple(int(x) for x in VERSION_COEUR.split(".")[:2]) >= (0, 7)
+
+
+@pytest.mark.skipif("not _coeur_07()",
+                    reason="playlists dynamiques -1/-2 dans ctx.pistes_playlist : cœur 0.7 (unisson#1077) attendu")
+async def test_la_playlist_des_pistes_favorites_passe_par_la_facade(banc, adresse, pistes, db_session):
+    b = await banc()
+    favorites = [pistes[2], pistes[0]]
+    for t in favorites:
+        await db_session.execute(text("INSERT INTO favorites (track_id, created_at) VALUES (:t, 'x')"), {"t": t})
+    await db_session.commit()
+    a, code = await b.lancer(contexte="playlist", contexte_id=alarmes.PLAYLIST_PISTES_FAVORITES,
+                             fin_mode="pistes", fin_valeur=5, montee_s=0)
+    assert code == "en_cours"
+    assert await b.fin() == "joue"
+    # Rien que les favorites, chacune une fois (l'ordre est celui du cœur).
+    assert sorted(b.dmr.jouees) == sorted(url_de(adresse, t) for t in favorites)
+    assert await comptes(db_session) == {p: int(p in favorites) for p in pistes}
+
+
 # ── les trois modes de fin ──────────────────────────────────────────────
 
 
@@ -165,9 +188,10 @@ async def test_fin_apres_deux_pistes_par_setnext_puis_veille(banc, adresse, pist
     assert (await relire(b.session, a["id"]))["dernier_resultat"] == "en_cours"
     assert await b.fin() == "joue"
 
-    # Allumer, volume (cible d'emblée : pas de montée), source réseau ; puis
-    # volume et source renvoyés après la sortie de veille ; veille à la fin.
-    assert b.telnet() == ["PWON", "MV400", "SINET", "MV400", "SINET", "PWSTANDBY"]
+    # Allumer, volume (cible d'emblée : pas de montée) ; puis volume renvoyé
+    # après la sortie de veille ; veille à la fin. Aucune source : R0 du
+    # 2026-11-01, SINET coupe la lecture DLNA de l'AVR-X4000.
+    assert b.telnet() == ["PWON", "MV400", "MV400", "PWSTANDBY"]
     # Une seule mise en place : la seconde piste enchaîne par SetNext.
     assert b.dmr.uris("SetAVTransportURI") == [url_de(adresse, pistes[0])]
     assert b.dmr.uris("SetNextAVTransportURI") == [url_de(adresse, pistes[1])]
@@ -474,15 +498,56 @@ async def test_une_alarme_qui_echoue_laisse_jouer_la_seance_en_cours(banc, adres
     assert b.seances.en_cours
 
 
+# ── l'ampli refuse la lecture (R0 du 2026-11-01) ───────────────────────
+
+
+class AvecSinet(Avrx4000):
+    source_reseau = "SINET"
+
+
+async def test_l_avrx4000_n_envoie_aucune_commande_de_source(banc, adresse, pistes):
+    b = await banc()
+    assert PILOTES["avrx4000"].source_reseau is None
+    _, code = await b.lancer(fin_mode="pistes", fin_valeur=1, montee_s=0)
+    assert code == "en_cours"
+    assert await b.fin() == "joue"
+    assert not [c for c in b.ampli.commandes if c.startswith("SI") and c != "SI?"], b.ampli.commandes
+
+
+async def test_un_stopped_peu_apres_playing_est_une_lecture_refusee(banc, adresse, pistes, db_session):
+    b = await banc(cadence=replace(CADENCE, refus_s=2.0))
+    b.dmr.arret_apres_s = {url_de(adresse, pistes[0]): 1.0}  # STOPPED 1 s après PLAYING, URI en place
+    pl = await playlist(db_session, pistes[:2])
+    await b.lancer(contexte="playlist", contexte_id=pl, fin_mode="pistes", fin_valeur=2, montee_s=0)
+    assert await b.fin() == "joue"  # pas une reprise de la main : la suivante est jouée
+    assert b.dmr.jouees == [url_de(adresse, pistes[0]), url_de(adresse, pistes[1])]
+    assert [(s["piste"], s["code"]) for s in b.seances.derniere["sautees"]] == [(pistes[0], "lecture_refusee")]
+    assert b.telnet()[-1] == "PWSTANDBY"
+
+
+async def test_trois_lectures_refusees_de_suite_finissent_en_lecture_impossible(banc, adresse, pistes, db_session):
+    b = await banc(cadence=replace(CADENCE, refus_s=2.0))
+    b.dmr.arret_apres_s = {url_de(adresse, p): 1.0 for p in pistes[:4]}
+    pl = await playlist(db_session, pistes[:4])
+    a, _ = await b.lancer(contexte="playlist", contexte_id=pl, fin_mode="pistes", fin_valeur=4, montee_s=0)
+    assert await b.fin() == "lecture_impossible"
+    assert b.dmr.jouees == [url_de(adresse, p) for p in pistes[:3]]  # la quatrième ne part pas
+    assert [s["code"] for s in b.seances.derniere["sautees"]] == ["lecture_refusee"] * 3
+    assert b.telnet()[-1] == "PWSTANDBY"  # l'ampli allumé pour rien retourne en veille
+    assert (await relire(b.session, a["id"]))["dernier_resultat"] == "lecture_impossible"
+
+
 # ── quelqu'un reprend la main ───────────────────────────────────────────
 
 
 @pytest.mark.parametrize("geste", ["autre_source", "stop", "pause", "autre_media", "veille"])
 async def test_reprise_de_la_main_sans_mise_en_veille(banc, adresse, longues, db_session, geste):
-    b = await banc()
+    # L'autre source se guette par telnet : il faut un pilote qui en force une.
+    b = await banc(pilote=AvecSinet() if geste == "autre_source" else None)
     pl = await playlist(db_session, longues[:2])
     a, _ = await b.lancer(contexte="playlist", contexte_id=pl, fin_mode="sans_limite", fin_valeur=None, montee_s=0)
-    await attendre(lambda: b.dmr.etat == "PLAYING" and b.lien.etat["source"] == "NET", delai=10)
+    await attendre(lambda: b.dmr.etat == "PLAYING"
+                   and (geste != "autre_source" or b.lien.etat["source"] == "NET"), delai=10)
     await asyncio.sleep(0.8)  # au-delà de la fenêtre de grâce du changement de piste
     if geste == "autre_source":
         await b.ampli.pousser("SITV\r")

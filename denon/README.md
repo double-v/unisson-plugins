@@ -53,8 +53,9 @@ réveil, unisson#1070).
 - **Les alarmes du réveil** (0.2.0, `backend/alarmes.py`), dans la table
   `plugin_denon.alarmes` (migration du plugin). Une heure locale (`HH:MM` ou
   `HH:MM:SS`, dans le réglage `fuseau`), un masque de jours (lundi = 1 …
-  dimanche = 64 ; 0 = une seule fois), ce qui se joue (`playlist`,
-  `bibliotheque` avec ses filtres genre, format, favoris, `artiste`,
+  dimanche = 64 ; 0 = une seule fois), ce qui se joue (`playlist`, y compris
+  depuis la 0.4.1 les playlists dynamiques -1 « Albums favoris » et -2
+  « Pistes favorites », cœur 0.7 ou plus, `bibliotheque` avec ses filtres genre, format, favoris, `artiste`,
   `album`), les volumes de départ et cible (-80 à 18 dB) et la montée (1 h au plus), la
   fin (`duree` en minutes, `pistes`, `sans_limite`). Changement d'heure :
   une heure qui n'existe pas (02:30 au passage à l'heure d'été) part une
@@ -80,11 +81,14 @@ réveil, unisson#1070).
      séance), les pistes (`pistes_playlist`, mélangée si demandé, ou
      `tirer_pistes`) et le flux de la première. Si l'une manque, l'ampli
      n'est pas réveillé et le résultat le dit.
-  2. *Allumer* : `PWON`, le volume de départ (la cible si `montee_s = 0`), la
-     source réseau du pilote (`SINET`). On prend la main quelle que soit la
-     source.
-  3. *Attendre* `delai_reveil_s`, renvoyer volume et source, puis `Play`
-     jusqu'à `PLAYING` (3 essais).
+  2. *Allumer* : `PWON`, le volume de départ (la cible si `montee_s = 0`), et
+     la source réseau du pilote s'il en a une (aucune sur l'AVR-X4000 depuis
+     la 0.4.1 : `SINET` y coupe la lecture DLNA, R0 du 2026-11-01). On prend
+     la main quelle que soit la source.
+  3. *Attendre* `delai_reveil_s`, renvoyer volume (et source), puis `Play`
+     jusqu'à `PLAYING` (3 essais). Un `STOPPED` juste après le début d'une
+     piste, notre URI en place, est une lecture refusée : piste suivante,
+     `lecture_impossible` après 3 refus de suite.
   4. *Jouer* : `SetAVTransportURI` → `Play` → `marquer_jouee`, la suivante
      en attente par `SetNextAVTransportURI`. **Repli** si l'ampli refuse
      `SetNext` ou s'arrête en fin de piste sans enchaîner :
@@ -217,9 +221,10 @@ fixe.
 
 Les valeurs du pilote `avrx4000` sont provisoires :
 
-- `source_reseau = "SINET"` : la source à forcer, et le nom que l'ampli
-  pousse ensuite (`SINET`, la séance guette `NET` pour la reprise de la
-  main) ; peut-être l'ampli bascule-t-il seul sur un flux UPnP ;
+- ~~`source_reseau = "SINET"`~~ tranché le 2026-11-01 : `None`. `SINET`
+  ouvre le menu réseau et coupe la lecture DLNA ; l'ampli bascule seul. Sans
+  source forcée, la séance ne guette plus « autre source » par telnet (un
+  `Stop` ou un autre média restent vus par UPnP) ;
 - `delai_reveil_s = 8` : le temps de sortie de veille avant qu'un `Play`
   prenne, et si un `MV` ou un `SI` envoyé pendant ce temps est perdu (la
   séance les renvoie après le délai) ;

@@ -65,6 +65,9 @@ class DmrAEtats(FauxLecteur):
         self._pret = 0.0  # fin de l'état d'attente (TRANSITIONING ou STOPPED de passage)
         self.reltime_zero = 0  # GetPositionInfo rend RelTime 0 ce nombre de fois (lu à la fin de piste)
         self.jouees: list[str] = []  # chaque début de lecture d'une URL
+        # L'ampli coupe seul ces URL tant de secondes après PLAYING (R0 : SINET
+        # ou un flux qu'il refuse), une fois chacune.
+        self.arret_apres_s: dict[str, float] = {}
 
     # ── ce que fait le lecteur ──────────────────────────────────────────
 
@@ -72,6 +75,11 @@ class DmrAEtats(FauxLecteur):
         if self.etat in ("TRANSITIONING", "PASSAGE") and time.monotonic() >= self._pret:
             self.etat, self.debut = "PLAYING", self._pret
         while self.etat == "PLAYING" and self.courante is not None:
+            coupe = self.arret_apres_s.get(self.courante[0])
+            if coupe is not None and time.monotonic() - self.debut >= coupe:
+                del self.arret_apres_s[self.courante[0]]
+                self.etat, self.position = "STOPPED", 0.0
+                return
             duree = self.courante[1]
             if duree is None or time.monotonic() - self.debut < duree:
                 return

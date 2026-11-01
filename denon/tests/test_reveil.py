@@ -50,6 +50,9 @@ async def test_la_migration_cree_la_table_dans_son_schema(denon_installe, db_ses
         ({"contexte": "radio"}, "contexte"),
         ({"contexte": "playlist"}, "contexte_id"),
         ({"contexte": "artiste", "contexte_id": 0}, "contexte_id"),
+        ({"contexte": "artiste", "contexte_id": -2}, "contexte_id"),  # -1 et -2 : playlists seulement
+        ({"contexte": "playlist", "contexte_id": 0}, "contexte_id"),
+        ({"contexte": "playlist", "contexte_id": -3}, "contexte_id"),
         ({"contexte_id": 3}, "contexte_id"),
         ({"melange": True}, "melange"),
         ({"contexte": "playlist", "contexte_id": 1, "genre_id": 1}, "genre_id"),
@@ -118,6 +121,23 @@ async def test_le_contexte_doit_exister(reveil, sample_data, db_session):
     await db_session.commit()
     r = await reveil.post(f"{RACINE}/alarmes", json=alarme(contexte="album", contexte_id=album), headers=AUTH)
     assert r.status_code == 422
+
+
+async def test_les_playlists_dynamiques_des_favoris(reveil):
+    """-1 « Albums favoris » et -2 « Pistes favorites » (`GET /api/playlists`)
+    n'ont pas de ligne dans `playlists` : acceptées sans la chercher."""
+    for pid in (alarmes.PLAYLIST_ALBUMS_FAVORIS, alarmes.PLAYLIST_PISTES_FAVORITES):
+        r = await reveil.post(f"{RACINE}/alarmes", json=alarme(contexte="playlist", contexte_id=pid, melange=True),
+                              headers=AUTH)
+        assert r.status_code == 201, r.text
+        assert r.json()["contexte_id"] == pid
+    assert (alarmes.PLAYLIST_ALBUMS_FAVORIS, alarmes.PLAYLIST_PISTES_FAVORITES) == (-1, -2)
+
+    for pid in (0, -3):
+        r = await reveil.post(f"{RACINE}/alarmes", json=alarme(contexte="playlist", contexte_id=pid), headers=AUTH)
+        assert r.status_code == 422, r.text
+        [erreur] = r.json()["erreurs"]
+        assert erreur["champ"] == "contexte_id" and "Pistes favorites" in erreur["message"]
 
 
 # ── les routes ──────────────────────────────────────────────────────────

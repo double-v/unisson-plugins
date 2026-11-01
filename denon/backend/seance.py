@@ -30,7 +30,11 @@ une alarme qui part pendant une séance la remplace.
 Un `STOPPED` est une fin de piste si la piste a joué au moins sa durée
 moins `1,5 × suivi_s + marge_fin_s` (le début de la piste est recalé sur
 chaque `RelTime` lu ; une durée inconnue compte comme une fin) ; sinon
-c'est un `Stop` venu d'ailleurs.
+c'est un `Stop` venu d'ailleurs. Sauf juste après le début de la piste
+(`attente_play_s + refus_s`), ou si `RelTime` n'a jamais avancé : notre URI
+encore en place, c'est l'ampli qui refuse la lecture (R0 du 2026-11-01) ; on
+passe à la suivante (`lecture_refusee`), et 3 refus de suite donnent
+`lecture_impossible`.
 
 Le résultat final va dans `dernier_resultat` (40 caractères au plus) :
 `joue`, `reprise_en_main`, `arretee`, `remplacee`, `ampli_injoignable`,
@@ -85,6 +89,11 @@ class Cadence:
     budget_arret_s: float = 6.0
     fermeture_s: float = 0.5
     marge_fin_s: float = 1.0  # un STOPPED à moins de 1,5 × suivi_s + ceci de la fin : fin de piste
+    # Un STOPPED moins de `attente_play_s` + ceci après le début de la piste
+    # (ou sans que RelTime ait jamais avancé), notre URI toujours en place :
+    # l'ampli a refusé la lecture (R0 du 2026-11-01 : arrêt 2 s après Play).
+    refus_s: float = 3.0
+    refus_max: int = 3  # lectures refusées de suite : `lecture_impossible`
 
 
 class Echec(Exception):
@@ -171,6 +180,8 @@ class Seance:
         self._changement = 0.0  # dernier changement d'URI : un STOPPED juste après est ignoré
         self._dernier_reltime: float | None = None
         self._reltime_avance = False  # RelTime avançait entre les deux derniers suivis
+        self._reltime_max = 0.0  # le plus grand RelTime lu en lecture sur cette piste
+        self._refus_suite = 0  # lectures refusées d'affilée
         self._upnp_perdu = False
         self._prochaine_en_echec = False
         self.allume = False  # PWON est parti : une fin anormale remet l'ampli en veille
@@ -438,6 +449,7 @@ class Seance:
         self._duree_piste = None
         self._dernier_reltime = None
         self._reltime_avance = False
+        self._reltime_max = 0.0
 
     async def _attendre_lecture(self) -> bool:
         fin = time.monotonic() + self.cadence.attente_play_s
@@ -531,6 +543,7 @@ class Seance:
                     self._debut_piste = min(self._debut_piste, avant - t)
                     self._reltime_avance = self._dernier_reltime is not None and t > self._dernier_reltime
                     self._dernier_reltime = t
+                    self._reltime_max = max(self._reltime_max, t)
                 if pos.duree_s:
                     self._duree_piste = pos.duree_s
                 if not self._suivante_posee:
@@ -546,10 +559,22 @@ class Seance:
             # début de la piste (recalé sur chaque `RelTime` lu) le dit. Sans
             # durée, un RelTime qui avançait encore dit un Stop d'ailleurs.
             d = self._duree_piste or self.courante.flux.duree
-            if d is not None and time.monotonic() - self._debut_piste < d - marge:
-                return self._reprise("arrêtée depuis ailleurs")
-            if d is None and self._reltime_avance:
-                return self._reprise("arrêtée depuis ailleurs (durée inconnue)")
+            ecoule = time.monotonic() - self._debut_piste
+            interrompue = (d is not None and ecoule < d - marge) or (d is None and self._reltime_avance)
+            if interrompue or (d is None and ecoule < c.attente_play_s + c.refus_s):
+                # Notre URI encore en place (ou vide : sinon, plus haut,
+                # « autre chose ») : juste après le début, ou sans que RelTime
+                # ait avancé, c'est l'ampli qui refuse la lecture.
+                jamais_avance = self._dernier_reltime is not None and self._reltime_max <= 0
+                if ecoule < c.attente_play_s + c.refus_s or jamais_avance:
+                    if await self._lecture_refusee(f"STOPPED {ecoule:.1f} s après le début"):
+                        continue
+                    if self.alarme["fin_mode"] == "sans_limite":
+                        return "pistes_epuisees"
+                    await self._veille()
+                    return "joue"
+                return self._reprise("arrêtée depuis ailleurs" if d is not None
+                                     else "arrêtée depuis ailleurs (durée inconnue)")
             if self.suivante is None or not await self._repli():
                 if self.alarme["fin_mode"] == "sans_limite":
                     return "pistes_epuisees"
@@ -557,7 +582,31 @@ class Seance:
                 await self._veille()
                 return "joue"
 
+    async def _lecture_refusee(self, motif: str) -> bool:
+        """La piste courante a été refusée : la suivante, à la main. Lève
+        `lecture_impossible` après `refus_max` refus de suite ; faux s'il
+        n'y a plus rien à jouer."""
+        while True:
+            self._refus_suite += 1
+            self._sauter(self.courante.id, "lecture_refusee", motif)
+            if self._refus_suite >= self.cadence.refus_max:
+                raise Echec("lecture_impossible", f"{self._refus_suite} lectures refusées de suite ({motif})")
+            piste = self.suivante if self.suivante is not None else await self._prochaine_sure()
+            self.suivante, self._suivante_posee = None, False
+            if piste is None:
+                if self.jouees <= self._refus_suite:
+                    raise Echec("lecture_impossible", f"lecture refusée, plus rien à jouer ({motif})")
+                return False
+            self.courante = piste
+            if (raison := await self._demarrer(piste)) is None:
+                self._log(logging.INFO, "lecture refusée : piste %s lancée à la place", piste.id)
+                await self._marquer(piste)
+                await self._mettre_en_attente()
+                return True
+            motif = raison
+
     async def _avancer(self) -> None:
+        self._refus_suite = 0  # la piste d'avant est allée au bout
         self.courante, self.suivante, self._suivante_posee = self.suivante, None, False
         await self._marquer(self.courante)
         await self._mettre_en_attente()
