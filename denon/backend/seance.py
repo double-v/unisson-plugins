@@ -7,12 +7,13 @@ une alarme qui part pendant une séance la remplace.
    le lien telnet, les formats du lecteur (`GetProtocolInfo`, une fois par
    séance), les pistes, et le flux de la première. Si l'une manque, l'ampli
    n'est pas réveillé pour rien : le résultat le dit.
-2. **Allumer** : `ZMON` (la zone principale seule), le volume de départ, la source réseau du pilote.
-   On prend la main quelle que soit la source.
+2. **Allumer** : `ZMON` (la zone principale seule), le volume de départ, la source réseau du pilote
+   (`SINET`). On prend la main quelle que soit la source.
 3. **Attendre** le délai de sortie de veille (`GetTransportInfo` répond
-   déjà en veille et ne prouve rien), renvoyer volume et source (une
-   commande reçue pendant le réveil a pu se perdre), puis `Play` jusqu'à
-   `PLAYING`, 3 essais au plus.
+   déjà en veille et ne prouve rien), renvoyer le volume (une commande reçue
+   pendant le réveil a pu se perdre), et la source si l'ampli ne l'a pas
+   confirmée, suivie de `attente_source_s` : un `SINET` collé à `Play` coupe
+   la lecture DLNA. Puis `Play` jusqu'à `PLAYING`, 3 essais au plus.
 4. **Jouer** : `SetAVTransportURI` → `Play` → `marquer_jouee`, puis la
    suivante en attente (`SetNextAVTransportURI`). **Repli** si l'ampli
    refuse `SetNext` (faute UPnP) ou s'arrête en fin de piste sans enchaîner :
@@ -94,6 +95,9 @@ class Cadence:
     # l'ampli a refusé la lecture (R0 du 2026-11-01 : arrêt 2 s après Play).
     refus_s: float = 3.0
     refus_max: int = 3  # lectures refusées de suite : `lecture_impossible`
+    # La source réseau renvoyée après la sortie de veille : le temps laissé à
+    # l'ampli avant `Play` (un `SINET` collé à `Play` coupe la lecture).
+    attente_source_s: float = 5.0
 
 
 class Echec(Exception):
@@ -400,11 +404,23 @@ class Seance:
         # Une commande reçue pendant la sortie de veille a pu se perdre.
         with contextlib.suppress(Injoignable):
             await self._volume(depart)
-            if p.source_reseau:
+            # La source ne se renvoie que si l'ampli ne l'a pas confirmée, et
+            # loin de `Play` : un `SINET` juste avant coupe la lecture DLNA
+            # (R0 du 2026-11-01), envoyé quelques secondes avant il tient
+            # (recette du 2026-11-02).
+            if p.source_reseau and not p.est_source_reseau(self.lien.etat["source"]):
+                self._log(logging.INFO, "source réseau non confirmée (%s) : renvoyée, attente de %g s",
+                          self.lien.etat["source"], self.cadence.attente_source_s)
                 await self.lien.envoyer(p.source_reseau)
+                await asyncio.sleep(self.cadence.attente_source_s)
 
         if (raison := await self._demarrer(self.courante)) is not None:
             raise Echec("lecture_impossible", raison)
+        if p.source_reseau and not p.est_source_reseau(self.lien.etat["source"]):
+            # On joue, mais peut-être sur une autre entrée : que le journal le dise.
+            self._log(logging.WARNING, "lecture lancée mais l'ampli n'est pas sur la source réseau (%s)",
+                      self.lien.etat["source"])
+
         self.etat = "lecture"
         await self._marquer(self.courante)
         await self._mettre_en_attente()

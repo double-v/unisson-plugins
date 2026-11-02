@@ -68,6 +68,7 @@ class DmrAEtats(FauxLecteur):
         # L'ampli coupe seul ces URL tant de secondes après PLAYING (R0 : SINET
         # ou un flux qu'il refuse), une fois chacune.
         self.arret_apres_s: dict[str, float] = {}
+        self.horodatage: list[tuple[float, str]] = []  # (instant, action AVTransport) reçus
 
     # ── ce que fait le lecteur ──────────────────────────────────────────
 
@@ -129,6 +130,7 @@ class DmrAEtats(FauxLecteur):
         statut, corps = super()._repondre(r)
         if r.chemin != "/AVTransport/ctrl" or not r.action:
             return statut, corps
+        self.horodatage.append((time.monotonic(), r.action))
         a = r.arguments or {}
         self._avancer()
         if r.action == "SetAVTransportURI":

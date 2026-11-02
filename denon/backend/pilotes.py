@@ -41,9 +41,11 @@ class Avrx4000:
     # (recette sur l'ampli, `docs/reveil.md`) :
     # - la commande qui bascule sur la source réseau ; None : on n'en envoie
     #   aucune (l'ampli bascule seul quand on lui fait jouer un flux).
-    #   R0 du 2026-11-01 : SINET ouvre le menu réseau et coupe la lecture
-    #   DLNA ; l'ampli bascule seul ;
-    source_reseau: str | None = None
+    #   Recette du 2026-11-02 : l'AVR-X4000 ne bascule PAS seul (il reste
+    #   sur sa dernière entrée, le lecteur DLNA joue dans le vide). `SINET`
+    #   collé à `Play` coupe la lecture (R0 du 2026-11-01), envoyé quelques
+    #   secondes avant il tient : la séance l'envoie à l'allumage ;
+    source_reseau: str | None = "SINET"
     # - le temps de sortie de veille avant que `Play` prenne (le réglage
     #   `delai_reveil_s` du plugin le remplace) ;
     delai_reveil_s: float = 8.0
