@@ -71,9 +71,10 @@ remplace.
 1. **Allumer** : `ZMON` par le lien (la zone principale seule, 0.4.2 :
    `PWON` réveillait aussi les zones 2 et 3, et `PWSTANDBY` coupait une
    zone 2 qui jouait), puis le volume de départ (`MV`), puis la
-   source réseau du pilote s'il en a une. L'AVR-X4000 n'en a pas (R0 du
-   2026-11-01 : il bascule seul, et `SINET` coupe la lecture DLNA). On prend
-   la main quelle que soit la source.
+   source réseau du pilote (`SINET` sur l'AVR-X4000). On prend la main
+   quelle que soit la source. Après le délai de sortie de veille, la source
+   n'est renvoyée que si l'ampli ne l'a pas confirmée, suivie de
+   `attente_source_s` (5 s) : un `SINET` collé à `Play` coupe la lecture.
 2. **Attendre que l'ampli soit prêt** : `GetTransportInfo` répond déjà en
    veille, il ne prouve donc rien. On attend le délai de sortie de veille
    mesuré en R0 (pilote : `delai_reveil_s`), puis on réessaie `Play` jusqu'à
@@ -268,7 +269,11 @@ vaut `/settings#reseau`) se préfixe de `/admin`, où l'admin est servie.
   le lecteur DLNA (flux lu à 2 Mo, puis `STOPPED` 2 s après `Play`). En UPnP
   pur, sans commande de source, la même piste joue (`PLAYING` en 3,2 s) :
   l'ampli bascule seul. Le pilote `avrx4000` n'envoie plus de source
-  (0.4.1), et un `STOPPED` juste après le début d'une piste, notre URI en
+  (0.4.1). **Faux, corrigé le 2026-11-02 (0.4.3)** : l'ampli était déjà
+  sur le réseau pendant ce R0. Réveillé depuis l'entrée BD, il y reste et
+  le lecteur DLNA joue sans son. Sélectionner le réseau, attendre ~10 s,
+  puis lancer la séance : le son sort et tient. La séance envoie donc
+  `SINET` à l'allumage, loin de `Play`. Un `STOPPED` juste après le début d'une piste, notre URI en
   place, est une lecture refusée : piste suivante (`lecture_refusee`), et
   `lecture_impossible` après 3 refus de suite ;
 

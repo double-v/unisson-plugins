@@ -83,11 +83,12 @@ réveil, unisson#1070).
      n'est pas réveillé et le résultat le dit.
   2. *Allumer* : `ZMON` (la zone principale seule depuis la 0.4.2 ; `PWON`
      réveillait aussi les zones 2 et 3), le volume de départ (la cible si `montee_s = 0`), et
-     la source réseau du pilote s'il en a une (aucune sur l'AVR-X4000 depuis
-     la 0.4.1 : `SINET` y coupe la lecture DLNA, R0 du 2026-11-01). On prend
-     la main quelle que soit la source.
-  3. *Attendre* `delai_reveil_s`, renvoyer volume (et source), puis `Play`
-     jusqu'à `PLAYING` (3 essais). Un `STOPPED` juste après le début d'une
+     la source réseau du pilote (`SINET` sur l'AVR-X4000, rétabli en 0.4.3 :
+     sans elle, l'ampli reste sur sa dernière entrée). On prend la main
+     quelle que soit la source.
+  3. *Attendre* `delai_reveil_s`, renvoyer le volume, et la source si
+     l'ampli ne l'a pas confirmée (suivie de 5 s : un `SINET` collé à `Play`
+     coupe la lecture DLNA), puis `Play` jusqu'à `PLAYING` (3 essais). Un `STOPPED` juste après le début d'une
      piste, notre URI en place, est une lecture refusée : piste suivante,
      `lecture_impossible` après 3 refus de suite.
   4. *Jouer* : `SetAVTransportURI` → `Play` → `marquer_jouee`, la suivante
@@ -222,10 +223,13 @@ fixe.
 
 Les valeurs du pilote `avrx4000` sont provisoires :
 
-- ~~`source_reseau = "SINET"`~~ tranché le 2026-11-01 : `None`. `SINET`
-  ouvre le menu réseau et coupe la lecture DLNA ; l'ampli bascule seul. Sans
-  source forcée, la séance ne guette plus « autre source » par telnet (un
-  `Stop` ou un autre média restent vus par UPnP) ;
+- `source_reseau = "SINET"` : tranché le 2026-11-02 (0.4.3). L'ampli ne
+  bascule **pas** seul : réveillé depuis une autre entrée (BD), il y reste,
+  et le lecteur DLNA joue sans qu'on l'entende (la 0.4.1, qui ne forçait
+  plus de source, se fondait sur un R0 fait avec l'ampli déjà sur le
+  réseau). `SINET` collé à `Play` coupe la lecture (R0 du 2026-11-01) ;
+  envoyé à l'allumage, quelques secondes avant, la lecture tient. La séance
+  guette de nouveau « autre source » par telnet ;
 - `delai_reveil_s = 8` : le temps de sortie de veille avant qu'un `Play`
   prenne, et si un `MV` ou un `SI` envoyé pendant ce temps est perdu (la
   séance les renvoie après le délai) ;
