@@ -102,16 +102,19 @@ remplace.
    - `sans_limite` : jamais tout seul.
 
    **Quelqu'un reprend la main** pendant la séance (autre source, `Pause`
-   venue d'ailleurs, mise en veille) : la séance s'arrête, sans mise en
-   veille. Un `Stop` en milieu de piste que rien d'autre n'explique est
+   venue d'ailleurs, mise en veille, zone principale éteinte, sourdine) :
+   la séance s'arrête, sans mise en veille. Un `Stop` en milieu de piste que rien d'autre n'explique est
    **relancé** (voir plus bas) avant d'être pris pour un geste.
 
 Chaque étape est journalisée (`unisson.plugin.denon`), et le résultat va
-dans `dernier_resultat`. Pendant la séance, le journal porte aussi chaque
-changement d'état UPnP (`lecteur : PLAYING → STOPPED (RelTime …)`), les
+dans `dernier_resultat`. Pendant la séance, le journal porte aussi l'état
+UPnP lu à chaque suivi (toutes les `suivi_s`), quand il change
+(`lecteur : (début) → PLAYING`, `lecteur : PLAYING → STOPPED (RelTime …)` ;
+un aller-retour plus court qu'un suivi n'y laisse pas de trace), les
 trames d'alimentation, de zone, de source et de sourdine que l'ampli
 annonce (`ampli : SINET`), et le détail de chaque `STOPPED` jugé (temps
-joué, durée, `RelTime` le plus haut, source, alimentation, volume).
+joué, durée, `RelTime` le plus haut, `CurrentTransportStatus`, état du
+lien telnet, source, alimentation, zone, sourdine, volume).
 
 ### L'ampli qui lâche seul (0.4.4, 2026-11-04)
 
@@ -123,12 +126,40 @@ retirée : l'ampli allumé, sans musique. L'essai lancé dix minutes après a
 joué normalement.
 
 Un réveil ne doit pas tomber sur un hoquet de l'ampli. Un `STOPPED` en
-milieu de piste, notre URI en place, sans pause, sans autre source et sans
-mise en veille, lance donc la suivante (`SetAVTransportURI` + `Play`, sans
-passer en repli), `relances_max` (2) fois par séance ; au troisième,
-c'est quelqu'un qui insiste, et la séance se retire. Pour couper un réveil :
-« Arrêter » dans unisson, la veille, une autre source ou la pause à la
-télécommande, qui restent des reprises immédiates.
+milieu de piste, notre URI en place, sans pause, sans autre source, sans
+veille, sans zone éteinte et sans sourdine, lance donc la suivante
+(`SetAVTransportURI` + `Play`, sans passer en repli) — la même si c'était
+la dernière —, `relances_max` (2) fois de suite ; au troisième, c'est
+quelqu'un qui insiste, et la séance se retire. Une piste allée au bout
+remet le compte à zéro : trois hoquets espacés d'une longue séance sont
+trois relances. Le nombre de relances est dans la vue de la séance.
+
+Les règles qui bornent la relance (revue de la 0.4.4) :
+
+- **Un geste par telnet est retenu**, pas lu dans un instantané : une
+  `PWSTANDBY`, un `ZMOFF`, une autre source ou un `MUON` vus pendant la
+  lecture arrêtent la séance, même si une autre trame les a recouverts. Le
+  geste est relu après la seconde d'attente (`attente_relance_s`) et après
+  le lancement : vu juste après une relance, la séance envoie `Stop` avant
+  de se retirer.
+- **Lien telnet coupé** : pas de relance, un geste serait invisible.
+- **Un `STOPPED` juste après une relance** est un `Stop` de plus, jamais
+  une lecture refusée : sinon un `Stop` rapide relancerait encore.
+- **Une relance qui ne démarre rien** finit en `lecture_impossible`
+  (`Stop` puis `ZMOFF`), pas en reprise de la main.
+- **Au repli comme à la relance**, `refus_max` (3) pistes refusées de suite
+  donnent `lecture_impossible` : un lecteur qui refuse tout faisait
+  recharger des lots sans fin. Avant chaque essai, un geste ou l'heure de
+  fin (`duree`) arrêtent tout.
+- En `pistes`, la piste coupée compte dans `fin_valeur`.
+
+**Un `Stop` à la télécommande ou depuis une appli est donc relancé deux
+fois** : rien ne le distingue, aujourd'hui, de l'ampli qui lâche. Pour
+couper un réveil : « Arrêter » dans unisson, la veille, une autre source,
+la sourdine ou la pause à la télécommande, qui restent des reprises
+immédiates. Le jour où le journal aura montré ce que l'ampli renvoie en
+lâchant (`CurrentTransportStatus`), on pourra ne relancer que sur
+`ERROR_OCCURRED`.
 
 ### Ce que le lot 4 a tranché là où la conception était muette
 

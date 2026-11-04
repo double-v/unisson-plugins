@@ -184,6 +184,7 @@
               :label="e.fin_mode === 'duree' ? 'Durée (min)' : 'Nombre de pistes'" :error="er.fin" block
               @update:model-value="champ('fin_valeur', $event === '' ? null : Number($event))" />
           </div>
+          <span :style="indice">Pour couper le réveil : « Arrêter », la veille, une autre entrée, la sourdine ou la pause. L'ampli lâche parfois la lecture seul : un Stop en milieu de piste, même à la télécommande, est relancé deux fois.</span>
         </div>
       </div>
 

@@ -88,7 +88,7 @@ async def test_etat(api):
     assert {k: etat[k] for k in ("connected", "power", "volume", "mute", "source", "host", "port")} == {
         "connected": True, "power": True, "volume": -35, "mute": False, "source": "GAME", "host": "127.0.0.1", "port": ampli.port,
     }
-    assert set(etat) == {"connected", "power", "volume", "mute", "source", "updatedAt", "host", "port"}
+    assert set(etat) == {"connected", "power", "volume", "mute", "source", "zone", "updatedAt", "host", "port"}
 
 
 async def test_file(api):
