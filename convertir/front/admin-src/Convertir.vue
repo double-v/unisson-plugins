@@ -6,8 +6,9 @@
       <p v-if="!vue.pistes.length" style="font-size: 0.875rem">Cet album n'a aucune piste WMA : rien à convertir.</p>
       <template v-else>
         <p style="font-size: 0.875rem">
-          Réencode les WMA en MP3 (CBR, au premier débit au moins égal à la source) et recopie leurs tags en ID3v2.4.
-          Les WMA partent à la corbeille ; la conversion se révoque depuis l'historique des opérations.
+          Réencode les WMA en MP3 (CBR, au débit de la source ou au palier juste au-dessus) et recopie leurs tags en
+          ID3v2.4. Les WMA partent à la corbeille ; favoris, playlists et écoutes suivent les pistes. La conversion se
+          révoque depuis l'historique des opérations tant que l'album n'a pas été renommé ou déplacé.
         </p>
         <table style="width: 100%; font-size: 0.8125rem; border-collapse: collapse">
           <thead>
@@ -21,7 +22,12 @@
             <tr v-for="p in vue.pistes" :key="p.track_id" :data-convertible="p.convertible">
               <td style="padding: var(--space-1); overflow-wrap: anywhere">{{ nomDe(p.source) }}</td>
               <td style="padding: var(--space-1); overflow-wrap: anywhere">
-                <template v-if="p.convertible">{{ p.nom_cible }}</template>
+                <template v-if="p.convertible">
+                  {{ p.nom_cible }}
+                  <span v-if="p.ecartes.length" style="display: block; color: var(--color-ink-muted)">
+                    non recopié : {{ p.ecartes.join(", ") }}
+                  </span>
+                </template>
                 <span v-else style="color: var(--color-ink-muted)">gardée — {{ p.motif_libelle || p.motif }}</span>
               </td>
               <td style="padding: var(--space-1); white-space: nowrap">
@@ -34,6 +40,9 @@
           À la corbeille : {{ vue.corbeille.length }} fichier{{ vue.corbeille.length > 1 ? "s" : "" }} WMA.
         </p>
         <p v-if="!vue.ffmpeg" role="alert" style="font-size: 0.8125rem">ffmpeg est introuvable sur le serveur : la conversion ne peut pas tourner.</p>
+        <p v-else-if="vue.scan_en_cours" role="status" style="font-size: 0.8125rem">
+          Un scan tourne : la conversion pourra attendre au tampon, elle ne s'appliquera qu'une fois le scan fini.
+        </p>
         <p v-else-if="!vue.mode_edition" role="alert" style="font-size: 0.8125rem">
           Le mode édition est coupé : la conversion peut attendre au tampon, elle ne s'appliquera qu'une fois activé.
         </p>
@@ -84,9 +93,13 @@ async function tamponner() {
     // L'écran dit ce que le serveur a fait, pas ce qu'on espérait (#1116).
     const op = Array.isArray(ops) ? ops[0] : null;
     etat.value = op?.status || "";
-    message.value = op?.status === "pending"
-      ? "Au tampon : la conversion attend votre approbation dans « Opérations »."
-      : `État rendu : ${op?.status || "inconnu"}${op?.reason ? ` (${op.reason})` : ""}.`;
+    if (op?.deduplicated) {
+      message.value = "Cette conversion attendait déjà au tampon : rien n'a été ajouté.";
+    } else if (op?.status === "pending") {
+      message.value = "Au tampon : la conversion attend votre approbation dans « Opérations ».";
+    } else {
+      message.value = `État rendu : ${op?.status || "inconnu"}${op?.reason ? ` (${op.reason})` : ""}.`;
+    }
   } catch (e) {
     message.value = motifErreur(e);
   } finally {

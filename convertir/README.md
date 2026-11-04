@@ -36,24 +36,44 @@ le serveur (déjà dans l'image d'unisson).
 - **Débit** : CBR, au **premier palier MP3 au moins égal à la source**
   (160 → 160, 193 → 224, 320 au plus ; 192 si la source est inconnue). Pas de
   réglage : remonter au-dessus ne rend rien de ce que le WMA a jeté, et
-  descendre perdrait encore. Le contrôle relit le MP3 : débit, durée (± 1 s),
-  et tous les tags écrits.
+  descendre perdrait encore. Le contrôle relit le MP3 : débit, durée (± 0,15 s
+  de l'en-tête du WMA, ce qui trahit une source abîmée que le décodeur
+  saute en silence), et tous les tags écrits.
 - **Tags** : les noms ASF que lit le scanner (#504) → ID3v2.4 (titre,
   artiste, album, artiste de l'album, piste, disque, année, genre,
-  compositeur, éditeur, ISRC, identifiants MusicBrainz en `TXXX` et `UFID`,
-  pochette `WM/Picture` → `APIC`). Ce qui n'a pas de cadre connu reste dans
-  l'original, à la corbeille.
+  compositeur, éditeur, ISRC, commentaire, paroles, ReplayGain, identifiants
+  MusicBrainz en `TXXX` et `UFID`, toutes les images `WM/Picture` → `APIC`,
+  recto d'abord). Un genre ID3v1 numérique devient son libellé. Une année
+  qui n'est pas une date (« Unknown », « 04/05/2001 ») n'est **pas devinée** :
+  elle est écartée et l'aperçu le dit (« non recopié : … ») ; elle reste
+  dans l'original, à la corbeille.
+- **Les pistes restent les mêmes** : le cœur garde chaque ligne de piste et
+  la fait pointer sur son MP3. Favoris, playlists, file, sampling et écoutes
+  suivent la conversion, et la révocation.
 - **Lidarr** n'est pas prévenu : il reconstate au prochain rafraîchissement
   de l'artiste. Le piloter seul serait un geste sur un service externe, à
   décider à part.
 
-## Refus
+## Ce que montre le tampon
 
-L'opération finit `failed` avec son motif, sans rien toucher : `perime`
-(l'album a changé depuis l'aperçu), `ffmpeg_absent`, `encodage` ou
-`controle` (le MP3 produit n'est pas conforme), et ceux du cœur
-(`place_prise`, `fichier_absent`, `scan_en_cours`…). Sans mode édition, rien
+Le juge passe avant l'application ; ce qui n'est plus une décision est rangé
+d'office, jamais appliqué :
+
+- `noop` « déjà en MP3 » : les mêmes pistes pointent déjà sur un MP3 ;
+- `obsolete` « pistes disparues » / « périmé » : des pistes ont quitté l'album
+  ou ne sont plus en WMA, ou le disque a changé depuis l'aperçu ;
+- reste `pending` (`indecidable`) si ffmpeg manque ou qu'une piste n'a pas pu
+  être lue : rien n'est rangé sur une lecture ratée, on rejuge plus tard.
+
+À l'application, l'opération finit `failed` avec son motif, sans rien
+toucher dans `/music` : `scan_en_cours` (jugé avant d'encoder), `perime`,
+`encodage`, `delai` (ffmpeg n'a pas fini à temps, il est tué), `controle`
+(le MP3 produit n'est pas conforme : durée, débit ou tags), et ceux du cœur
+(`place_prise`, `fichier_absent`, `non_pending`…). Sans mode édition, rien
 n'est encodé.
+
+La révocation refuse (409) sans rien toucher si l'album a été renommé ou
+déplacé depuis la conversion, si un scan tourne, ou si un fichier a disparu.
 
 ## Écrans
 

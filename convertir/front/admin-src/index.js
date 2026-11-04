@@ -7,7 +7,7 @@ import OutilQualite from "./OutilQualite.vue";
 export function installer(hote, enregistrer) {
   enregistrer.emplacement("fiche-album.hub", {
     titre: "Convertir en MP3",
-    description: "Rendre taguables les pistes WMA : MP3 au même débit, tags recopiés, WMA à la corbeille.",
+    description: "Rendre taguables les pistes WMA : MP3 au débit de la source (ou juste au-dessus), tags recopiés, WMA à la corbeille.",
     ecran: Convertir,
   });
   enregistrer.emplacement("qualite.ligne", { titre: "Conversion", composant: OutilQualite });

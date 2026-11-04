@@ -26,26 +26,35 @@ const _hoisted_6 = ["data-convertible"];
 const _hoisted_7 = { style: { "padding": "var(--space-1)", "overflow-wrap": "anywhere" } };
 const _hoisted_8 = { style: { "padding": "var(--space-1)", "overflow-wrap": "anywhere" } };
 const _hoisted_9 = {
+  key: 0,
+  style: { "display": "block", "color": "var(--color-ink-muted)" }
+};
+const _hoisted_10 = {
   key: 1,
   style: { "color": "var(--color-ink-muted)" }
 };
-const _hoisted_10 = { style: { "padding": "var(--space-1)", "white-space": "nowrap" } };
-const _hoisted_11 = {
+const _hoisted_11 = { style: { "padding": "var(--space-1)", "white-space": "nowrap" } };
+const _hoisted_12 = {
   key: 0,
   style: { "font-size": "0.8125rem", "color": "var(--color-ink-muted)" }
 };
-const _hoisted_12 = {
+const _hoisted_13 = {
   key: 1,
   role: "alert",
   style: { "font-size": "0.8125rem" }
 };
-const _hoisted_13 = {
+const _hoisted_14 = {
   key: 2,
+  role: "status",
+  style: { "font-size": "0.8125rem" }
+};
+const _hoisted_15 = {
+  key: 3,
   role: "alert",
   style: { "font-size": "0.8125rem" }
 };
-const _hoisted_14 = { key: 3 };
-const _hoisted_15 = {
+const _hoisted_16 = { key: 4 };
+const _hoisted_17 = {
   key: 2,
   role: "status",
   style: { "font-size": "0.8125rem", "color": "var(--color-ink-muted)" }
@@ -81,7 +90,13 @@ const _sfc_main$1 = {
         }]);
         const op = Array.isArray(ops) ? ops[0] : null;
         etat.value = (op == null ? void 0 : op.status) || "";
-        message.value = (op == null ? void 0 : op.status) === "pending" ? "Au tampon : la conversion attend votre approbation dans « Opérations »." : `État rendu : ${(op == null ? void 0 : op.status) || "inconnu"}${(op == null ? void 0 : op.reason) ? ` (${op.reason})` : ""}.`;
+        if (op == null ? void 0 : op.deduplicated) {
+          message.value = "Cette conversion attendait déjà au tampon : rien n'a été ajouté.";
+        } else if ((op == null ? void 0 : op.status) === "pending") {
+          message.value = "Au tampon : la conversion attend votre approbation dans « Opérations ».";
+        } else {
+          message.value = `État rendu : ${(op == null ? void 0 : op.status) || "inconnu"}${(op == null ? void 0 : op.reason) ? ` (${op.reason})` : ""}.`;
+        }
       } catch (e) {
         message.value = motifErreur(e);
       } finally {
@@ -101,7 +116,7 @@ const _sfc_main$1 = {
       return __hote$1.openBlock(), __hote$1.createElementBlock("div", _hoisted_1$1, [
         chargement.value ? (__hote$1.openBlock(), __hote$1.createElementBlock("p", _hoisted_2, "Lecture de l'album…")) : erreur.value ? (__hote$1.openBlock(), __hote$1.createElementBlock("p", _hoisted_3, __hote$1.toDisplayString(erreur.value), 1)) : vue.value ? (__hote$1.openBlock(), __hote$1.createElementBlock(__hote$1.Fragment, { key: 2 }, [
           !vue.value.pistes.length ? (__hote$1.openBlock(), __hote$1.createElementBlock("p", _hoisted_4, "Cet album n'a aucune piste WMA : rien à convertir.")) : (__hote$1.openBlock(), __hote$1.createElementBlock(__hote$1.Fragment, { key: 1 }, [
-            _cache[1] || (_cache[1] = __hote$1.createElementVNode("p", { style: { "font-size": "0.875rem" } }, " Réencode les WMA en MP3 (CBR, au premier débit au moins égal à la source) et recopie leurs tags en ID3v2.4. Les WMA partent à la corbeille ; la conversion se révoque depuis l'historique des opérations. ", -1)),
+            _cache[1] || (_cache[1] = __hote$1.createElementVNode("p", { style: { "font-size": "0.875rem" } }, " Réencode les WMA en MP3 (CBR, au débit de la source ou au palier juste au-dessus) et recopie leurs tags en ID3v2.4. Les WMA partent à la corbeille ; favoris, playlists et écoutes suivent les pistes. La conversion se révoque depuis l'historique des opérations tant que l'album n'a pas été renommé ou déplacé. ", -1)),
             __hote$1.createElementVNode("table", _hoisted_5, [
               _cache[0] || (_cache[0] = __hote$1.createElementVNode("thead", null, [
                 __hote$1.createElementVNode("tr", { style: { "text-align": "left", "color": "var(--color-ink-muted)" } }, [
@@ -119,10 +134,11 @@ const _sfc_main$1 = {
                     __hote$1.createElementVNode("td", _hoisted_7, __hote$1.toDisplayString(nomDe(p.source)), 1),
                     __hote$1.createElementVNode("td", _hoisted_8, [
                       p.convertible ? (__hote$1.openBlock(), __hote$1.createElementBlock(__hote$1.Fragment, { key: 0 }, [
-                        __hote$1.createTextVNode(__hote$1.toDisplayString(p.nom_cible), 1)
-                      ], 64)) : (__hote$1.openBlock(), __hote$1.createElementBlock("span", _hoisted_9, "gardée — " + __hote$1.toDisplayString(p.motif_libelle || p.motif), 1))
+                        __hote$1.createTextVNode(__hote$1.toDisplayString(p.nom_cible) + " ", 1),
+                        p.ecartes.length ? (__hote$1.openBlock(), __hote$1.createElementBlock("span", _hoisted_9, " non recopié : " + __hote$1.toDisplayString(p.ecartes.join(", ")), 1)) : __hote$1.createCommentVNode("", true)
+                      ], 64)) : (__hote$1.openBlock(), __hote$1.createElementBlock("span", _hoisted_10, "gardée — " + __hote$1.toDisplayString(p.motif_libelle || p.motif), 1))
                     ]),
-                    __hote$1.createElementVNode("td", _hoisted_10, [
+                    __hote$1.createElementVNode("td", _hoisted_11, [
                       p.convertible ? (__hote$1.openBlock(), __hote$1.createElementBlock(__hote$1.Fragment, { key: 0 }, [
                         __hote$1.createTextVNode(__hote$1.toDisplayString(p.debit_source || "?") + " → " + __hote$1.toDisplayString(p.debit_cible) + " kbps", 1)
                       ], 64)) : __hote$1.createCommentVNode("", true)
@@ -131,9 +147,9 @@ const _sfc_main$1 = {
                 }), 128))
               ])
             ]),
-            vue.value.a_convertir ? (__hote$1.openBlock(), __hote$1.createElementBlock("p", _hoisted_11, " À la corbeille : " + __hote$1.toDisplayString(vue.value.corbeille.length) + " fichier" + __hote$1.toDisplayString(vue.value.corbeille.length > 1 ? "s" : "") + " WMA. ", 1)) : __hote$1.createCommentVNode("", true),
-            !vue.value.ffmpeg ? (__hote$1.openBlock(), __hote$1.createElementBlock("p", _hoisted_12, "ffmpeg est introuvable sur le serveur : la conversion ne peut pas tourner.")) : !vue.value.mode_edition ? (__hote$1.openBlock(), __hote$1.createElementBlock("p", _hoisted_13, " Le mode édition est coupé : la conversion peut attendre au tampon, elle ne s'appliquera qu'une fois activé. ")) : __hote$1.createCommentVNode("", true),
-            vue.value.a_convertir ? (__hote$1.openBlock(), __hote$1.createElementBlock("div", _hoisted_14, [
+            vue.value.a_convertir ? (__hote$1.openBlock(), __hote$1.createElementBlock("p", _hoisted_12, " À la corbeille : " + __hote$1.toDisplayString(vue.value.corbeille.length) + " fichier" + __hote$1.toDisplayString(vue.value.corbeille.length > 1 ? "s" : "") + " WMA. ", 1)) : __hote$1.createCommentVNode("", true),
+            !vue.value.ffmpeg ? (__hote$1.openBlock(), __hote$1.createElementBlock("p", _hoisted_13, "ffmpeg est introuvable sur le serveur : la conversion ne peut pas tourner.")) : vue.value.scan_en_cours ? (__hote$1.openBlock(), __hote$1.createElementBlock("p", _hoisted_14, " Un scan tourne : la conversion pourra attendre au tampon, elle ne s'appliquera qu'une fois le scan fini. ")) : !vue.value.mode_edition ? (__hote$1.openBlock(), __hote$1.createElementBlock("p", _hoisted_15, " Le mode édition est coupé : la conversion peut attendre au tampon, elle ne s'appliquera qu'une fois activé. ")) : __hote$1.createCommentVNode("", true),
+            vue.value.a_convertir ? (__hote$1.openBlock(), __hote$1.createElementBlock("div", _hoisted_16, [
               __hote$1.createVNode(__hote$1.unref(__hote.UiButton), {
                 intent: "primary",
                 size: "sm",
@@ -149,7 +165,7 @@ const _sfc_main$1 = {
               }, 8, ["loading", "disabled"])
             ])) : __hote$1.createCommentVNode("", true)
           ], 64)),
-          message.value ? (__hote$1.openBlock(), __hote$1.createElementBlock("p", _hoisted_15, __hote$1.toDisplayString(message.value), 1)) : __hote$1.createCommentVNode("", true)
+          message.value ? (__hote$1.openBlock(), __hote$1.createElementBlock("p", _hoisted_17, __hote$1.toDisplayString(message.value), 1)) : __hote$1.createCommentVNode("", true)
         ], 64)) : __hote$1.createCommentVNode("", true)
       ]);
     };
@@ -195,7 +211,7 @@ const _sfc_main = {
 function installer(hote2, enregistrer) {
   enregistrer.emplacement("fiche-album.hub", {
     titre: "Convertir en MP3",
-    description: "Rendre taguables les pistes WMA : MP3 au même débit, tags recopiés, WMA à la corbeille.",
+    description: "Rendre taguables les pistes WMA : MP3 au débit de la source (ou juste au-dessus), tags recopiés, WMA à la corbeille.",
     ecran: _sfc_main$1
   });
   enregistrer.emplacement("qualite.ligne", { titre: "Conversion", composant: _sfc_main });
