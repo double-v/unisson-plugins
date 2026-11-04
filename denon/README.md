@@ -105,12 +105,15 @@ réveil, unisson#1070).
   7. *Finir* : `duree` → `Stop` puis `ZMOFF` à l'échéance ; `pistes` →
      `fin_valeur` pistes puis `ZMOFF` ; `sans_limite` → des lots de 50
      rechargés, jamais de veille (`duree` recharge aussi). **Reprise de la
-     main** (autre source, `Stop` ou `Pause` venus d'ailleurs, autre média,
-     mise en veille) : la séance s'arrête, sans mise en veille. Un
-     `STOPPED` est une fin de piste si la piste a joué sa durée, à 4 s près
-     (1,5 × le suivi + 1 s) ; sinon c'est un `Stop` venu d'ailleurs. Sans
-     durée connue, un `STOPPED` alors que `RelTime` avançait est un `Stop`
-     d'ailleurs. Juste après un changement de piste, un `STOPPED` est ignoré
+     main** (autre source, `Pause` venue d'ailleurs, autre média, mise en
+     veille) : la séance s'arrête, sans mise en veille. Un `STOPPED` est
+     une fin de piste si la piste a joué sa durée, à 4 s près (1,5 × le
+     suivi + 1 s) ; sinon c'est un `Stop` venu d'ailleurs. Sans durée
+     connue, un `STOPPED` alors que `RelTime` avançait est un `Stop`
+     d'ailleurs. Ce `Stop`, l'AVR-X4000 le fait parfois seul (0.4.4) : la
+     séance relance la suivante, deux fois au plus, avant de le prendre
+     pour un geste. Chaque changement d'état UPnP, les trames `PW`/`ZM`/
+     `SI`/`MU` de l'ampli et le détail de chaque `STOPPED` vont au journal. Juste après un changement de piste, un `STOPPED` est ignoré
      4 s ; au repli, une piste qui ne démarre pas est sautée.
   8. *Fin anormale* après `ZMON` (`lecture_impossible`, erreur) : `Stop`
      puis `ZMOFF`. En `duree`, UPnP perdu n'arrête pas la séance : la

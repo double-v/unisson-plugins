@@ -25,13 +25,16 @@ une alarme qui part pendant une séance la remplace.
    s'arrête si l'ampli pousse un volume que nous n'avons pas envoyé.
 7. **Finir** : `duree` → `Stop` puis `ZMOFF` ; `pistes` → `ZMOFF`
    après la dernière ; `sans_limite` → jamais seul. Quelqu'un qui reprend la
-   main (autre source, `Stop` ou `Pause` venus d'ailleurs, autre média,
-   mise en veille) arrête la séance, sans mise en veille.
+   main (autre source, `Pause` venue d'ailleurs, autre média, mise en
+   veille) arrête la séance, sans mise en veille. Un `Stop` en milieu de
+   piste que rien d'autre n'explique est d'abord pris pour l'ampli qui
+   lâche (il le fait seul) : la suivante est relancée, `relances_max` fois
+   par séance ; au-delà, c'est une reprise de la main.
 
 Un `STOPPED` est une fin de piste si la piste a joué au moins sa durée
 moins `1,5 × suivi_s + marge_fin_s` (le début de la piste est recalé sur
 chaque `RelTime` lu ; une durée inconnue compte comme une fin) ; sinon
-c'est un `Stop` venu d'ailleurs. Sauf juste après le début de la piste
+c'est un `Stop` venu d'ailleurs (relancé, voir 7). Sauf juste après le début de la piste
 (`attente_play_s + refus_s`), ou si `RelTime` n'a jamais avancé : notre URI
 encore en place, c'est l'ampli qui refuse la lecture (R0 du 2026-11-01) ; on
 passe à la suivante (`lecture_refusee`), et 3 refus de suite donnent
@@ -98,6 +101,16 @@ class Cadence:
     # La source réseau renvoyée après la sortie de veille : le temps laissé à
     # l'ampli avant `Play` (un `SINET` collé à `Play` coupe la lecture).
     attente_source_s: float = 5.0
+    # Un `Stop` en milieu de piste que rien n'explique (ni pause, ni autre
+    # source, ni veille) : l'AVR-X4000 en fait seul (le 2026-11-04, flux
+    # fermé par l'ampli à 38 s d'une piste de 2 min 18). Un réveil relance
+    # la suivante, autant de fois au plus par séance ; au-delà, c'est
+    # quelqu'un qui insiste.
+    relances_max: int = 2
+    # Avant de relancer, le temps laissé aux trames telnet : une veille ou
+    # une autre entrée à la télécommande arrive par là, parfois après le
+    # STOPPED qu'elle a causé. Relancer dessus rallumerait l'ampli.
+    attente_relance_s: float = 1.0
 
 
 class Echec(Exception):
@@ -127,6 +140,10 @@ def _en_vol(ensemble: set, coro) -> asyncio.Future:
     tache.add_done_callback(ensemble.discard)
     tache.add_done_callback(lambda t: t.cancelled() or t.exception())  # lue, même si personne n'attend plus
     return tache
+
+
+def _secondes(s: float | None) -> str:
+    return "?" if s is None else f"{s:.1f} s"
 
 
 def maintenant_utc() -> datetime:
@@ -190,6 +207,9 @@ class Seance:
         self._prochaine_en_echec = False
         self.allume = False  # ZMON est parti : une fin anormale remet l'ampli en veille
         self.uri_posee = False  # un SetAVTransportURI est parti : arrêter envoie Stop
+        self.relances = 0  # Stop inexpliqués relancés
+        self._dernier_etat: str | None = None  # l'état UPnP au dernier suivi, pour n'en journaliser que les changements
+        self._trames_vues: dict[str, str] = {}  # dernière trame telnet journalisée, par préfixe
 
     @property
     def ident(self) -> int:
@@ -312,7 +332,15 @@ class Seance:
 
     async def derouler(self) -> str:
         """La séance entière ; rend le code du résultat, sans jamais lever
-        (une annulation porte son motif : `motif_arret`)."""
+        (une annulation porte son motif : `motif_arret`). L'écouteur des
+        trames de l'ampli est retiré quoi qu'il arrive."""
+        retirer_trames = self.lien.ecouter(self._trame_journal)
+        try:
+            return await self._derouler_et_conclure()
+        finally:
+            retirer_trames()
+
+    async def _derouler_et_conclure(self) -> str:
         anormale, annulee = False, False
         try:
             code = await self._derouler()
@@ -541,6 +569,10 @@ class Seance:
                 continue
             echecs = 0
             self._upnp_perdu = False
+            if etat != self._dernier_etat:
+                self._log(logging.INFO, "lecteur : %s → %s (RelTime %s, piste %s)", self._dernier_etat, etat,
+                          _secondes(pos.temps_s), self.courante.id)
+                self._dernier_etat = etat
 
             uri = pos.uri
             if self.suivante and uri and meme_piste(uri, self.suivante.flux.url) and not meme_piste(uri, self.courante.flux.url):
@@ -577,6 +609,9 @@ class Seance:
             d = self._duree_piste or self.courante.flux.duree
             ecoule = time.monotonic() - self._debut_piste
             interrompue = (d is not None and ecoule < d - marge) or (d is None and self._reltime_avance)
+            self._log(logging.INFO, "%s à %s sur %s (RelTime max %s, source %s, alimentation %s, volume %s dB)",
+                      etat, _secondes(ecoule), _secondes(d), _secondes(self._reltime_max),
+                      self.lien.etat["source"], self.lien.etat["power"], self.lien.etat["volume"])
             if interrompue or (d is None and ecoule < c.attente_play_s + c.refus_s):
                 # Notre URI encore en place (ou vide : sinon, plus haut,
                 # « autre chose ») : juste après le début, ou sans que RelTime
@@ -589,8 +624,14 @@ class Seance:
                         return "pistes_epuisees"
                     await self._veille()
                     return "joue"
-                return self._reprise("arrêtée depuis ailleurs" if d is not None
-                                     else "arrêtée depuis ailleurs (durée inconnue)")
+                motif = "arrêtée depuis ailleurs" if d is not None else "arrêtée depuis ailleurs (durée inconnue)"
+                if self.relances < c.relances_max:
+                    await asyncio.sleep(c.attente_relance_s)
+                    if geste := self._reprise_telnet():
+                        return self._reprise(geste)
+                    if await self._relancer(motif):
+                        continue
+                return self._reprise(motif)
             if self.suivante is None or not await self._repli():
                 if self.alarme["fin_mode"] == "sans_limite":
                     return "pistes_epuisees"
@@ -634,11 +675,38 @@ class Seance:
         if not self.repli:
             self.repli = True
             self._log(logging.WARNING, "l'ampli n'a pas enchaîné : repli sur SetAVTransportURI")
+        return await self._lancer_suivante("repli")
+
+    async def _relancer(self, motif: str) -> bool:
+        """Un `Stop` que rien n'explique : la suivante, à la main, sans
+        passer en repli (l'ampli sait enchaîner, il a seulement lâché).
+        Faux s'il n'y a plus rien à jouer : c'est alors une reprise."""
+        self.relances += 1
+        self._log(logging.WARNING, "%s sans geste visible : relance %d/%d", motif, self.relances,
+                  self.cadence.relances_max)
+        if self.suivante is None:
+            self.suivante, self._suivante_posee = await self._prochaine_sure(), False
+        if self.suivante is None:
+            # La dernière : la rejouer, sinon c'est l'incident même (ampli
+            # allumé, plus de musique). Déjà marquée jouée, elle ne l'est
+            # pas deux fois.
+            piste = self.courante
+            if (raison := await self._demarrer(piste)) is not None:
+                self._sauter(piste.id, "lecture_refusee", raison)
+                return False
+            self._log(logging.INFO, "relance : piste %s rejouée", piste.id)
+            return True
+        return await self._lancer_suivante("relance")
+
+    async def _lancer_suivante(self, quoi: str) -> bool:
+        """La suivante par `SetAVTransportURI` + `Play`. Une piste qui ne
+        démarre pas est sautée (ce n'est pas une reprise de la main) ; faux
+        s'il n'y a plus rien à jouer."""
         while self.suivante is not None:
             piste = self.suivante
             raison = await self._demarrer(piste)
             if raison is None:
-                self._log(logging.INFO, "repli : piste %s lancée", piste.id)
+                self._log(logging.INFO, "%s : piste %s lancée", quoi, piste.id)
                 await self._avancer()
                 return True
             self._sauter(piste.id, "lecture_refusee", raison)
@@ -658,6 +726,15 @@ class Seance:
         elif self._allume_vu and etat["power"] is False:
             return "ampli mis en veille"
         return None
+
+    def _trame_journal(self, ligne: str) -> None:
+        """Alimentation, zone, source et sourdine telles que l'ampli les
+        annonce pendant la séance : sans elles, un arrêt ne dit pas qui l'a
+        causé. Le volume (`MV`) n'y est pas, la montée en pousse des dizaines."""
+        prefixe = ligne[:2]
+        if prefixe in ("PW", "ZM", "SI", "MU") and self._trames_vues.get(prefixe) != ligne:
+            self._trames_vues[prefixe] = ligne
+            self._log(logging.INFO, "ampli : %s", ligne)
 
     def _reprise(self, motif: str) -> str:
         self._log(logging.INFO, "quelqu'un reprend la main : %s", motif)

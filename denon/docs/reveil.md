@@ -101,11 +101,34 @@ remplace.
    - `pistes` : après la dernière, `ZMOFF` ;
    - `sans_limite` : jamais tout seul.
 
-   **Quelqu'un reprend la main** pendant la séance (autre source, `Stop` ou
-   `Pause` venus d'ailleurs) : la séance s'arrête, sans mise en veille.
+   **Quelqu'un reprend la main** pendant la séance (autre source, `Pause`
+   venue d'ailleurs, mise en veille) : la séance s'arrête, sans mise en
+   veille. Un `Stop` en milieu de piste que rien d'autre n'explique est
+   **relancé** (voir plus bas) avant d'être pris pour un geste.
 
 Chaque étape est journalisée (`unisson.plugin.denon`), et le résultat va
-dans `dernier_resultat`.
+dans `dernier_resultat`. Pendant la séance, le journal porte aussi chaque
+changement d'état UPnP (`lecteur : PLAYING → STOPPED (RelTime …)`), les
+trames d'alimentation, de zone, de source et de sourdine que l'ampli
+annonce (`ampli : SINET`), et le détail de chaque `STOPPED` jugé (temps
+joué, durée, `RelTime` le plus haut, source, alimentation, volume).
+
+### L'ampli qui lâche seul (0.4.4, 2026-11-04)
+
+Réveil de 8 h 45 : `PLAYING`, `RelTime` qui avance, ampli sur `NET`, puis
+l'ampli ferme lui-même le flux (6,7 Mo lus sur 15) à 38 s d'une piste de
+2 min 18 et passe `STOPPED`. Aucune commande partie d'unisson, aucun autre
+client. La séance l'avait pris pour un `Stop` d'ailleurs et s'était
+retirée : l'ampli allumé, sans musique. L'essai lancé dix minutes après a
+joué normalement.
+
+Un réveil ne doit pas tomber sur un hoquet de l'ampli. Un `STOPPED` en
+milieu de piste, notre URI en place, sans pause, sans autre source et sans
+mise en veille, lance donc la suivante (`SetAVTransportURI` + `Play`, sans
+passer en repli), `relances_max` (2) fois par séance ; au troisième,
+c'est quelqu'un qui insiste, et la séance se retire. Pour couper un réveil :
+« Arrêter » dans unisson, la veille, une autre source ou la pause à la
+télécommande, qui restent des reprises immédiates.
 
 ### Ce que le lot 4 a tranché là où la conception était muette
 
