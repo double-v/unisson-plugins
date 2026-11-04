@@ -564,7 +564,7 @@ const _hoisted_7$3 = {
 };
 const _hoisted_8$3 = { style: { "display": "flex", "flex-direction": "column", "gap": "var(--space-4)" } };
 const _hoisted_9$3 = { style: { "display": "flex", "flex-direction": "column", "gap": "var(--space-1-5)", "max-width": "18rem" } };
-const _hoisted_10$2 = ["value"];
+const _hoisted_10$3 = ["value"];
 const _hoisted_11$2 = { style: { "font-size": "11px", "font-weight": "600", "letter-spacing": ".04em", "color": "var(--color-ink-muted)" } };
 const _hoisted_12$2 = { style: { "font-family": "var(--font-mono)", "font-variant-numeric": "tabular-nums", "font-size": "var(--text-xl)", "font-weight": "500", "letter-spacing": "-0.02em" } };
 const _hoisted_13$2 = { style: { "font-size": "var(--text-xs)", "color": "var(--color-ink-faint)", "font-family": "var(--font-mono)" } };
@@ -951,7 +951,7 @@ const _sfc_main$4 = {
                       return __hote$2.openBlock(), __hote$2.createElementBlock("option", {
                         key: f,
                         value: f
-                      }, __hote$2.toDisplayString(f === "Europe/Paris" ? "Europe/Paris (par défaut)" : f), 9, _hoisted_10$2);
+                      }, __hote$2.toDisplayString(f === "Europe/Paris" ? "Europe/Paris (par défaut)" : f), 9, _hoisted_10$3);
                     }), 128))
                   ]),
                   _: 1
@@ -1157,7 +1157,7 @@ const _hoisted_6$3 = {
 const _hoisted_7$2 = { style: { "color": "var(--color-ink)" } };
 const _hoisted_8$2 = { style: { "display": "flex", "align-items": "center", "gap": "var(--space-3)" } };
 const _hoisted_9$2 = ["aria-checked", "onClick"];
-const _hoisted_10$1 = { style: { "font-weight": "600", "font-size": "var(--text-sm)" } };
+const _hoisted_10$2 = { style: { "font-weight": "600", "font-size": "var(--text-sm)" } };
 const _hoisted_11$1 = { style: { "padding": "var(--space-4)", "background": "var(--color-surface-sunken)", "border-radius": "var(--radius-md)", "display": "flex", "flex-direction": "column", "gap": "var(--space-4)" } };
 const _hoisted_12$1 = { value: "" };
 const _hoisted_13$1 = ["value"];
@@ -1696,7 +1696,7 @@ const _sfc_main$3 = {
                       style: __hote$2.normalizeStyle(option(e.contexte === o.v)),
                       onClick: ($event) => choisirContexte(o.v)
                     }, [
-                      __hote$2.createElementVNode("b", _hoisted_10$1, __hote$2.toDisplayString(o.titre), 1),
+                      __hote$2.createElementVNode("b", _hoisted_10$2, __hote$2.toDisplayString(o.titre), 1),
                       __hote$2.createElementVNode("span", {
                         style: __hote$2.normalizeStyle({ fontSize: "var(--text-xs)", color: e.contexte === o.v ? "var(--color-primary-ink)" : "var(--color-ink-muted)" })
                       }, __hote$2.toDisplayString(o.sous), 5)
@@ -2043,7 +2043,8 @@ const _sfc_main$3 = {
                     block: "",
                     "onUpdate:modelValue": _cache[14] || (_cache[14] = ($event) => champ("fin_valeur", $event === "" ? null : Number($event)))
                   }, null, 8, ["model-value", "max", "label", "error"])
-                ]))
+                ])),
+                __hote$2.createElementVNode("span", { style: indice }, "Pour couper le réveil : « Arrêter », la veille, une autre entrée, la sourdine ou la pause. L'ampli lâche parfois la lecture seul : un Stop en milieu de piste, même à la télécommande, est relancé deux fois.")
               ], 4)
             ])
           ]),
@@ -2071,7 +2072,7 @@ const _hoisted_6$2 = ["aria-label"];
 const _hoisted_7$1 = { style: { "white-space": "nowrap", "overflow": "hidden", "text-overflow": "ellipsis" } };
 const _hoisted_8$1 = { style: { "font-size": "var(--text-xs)", "color": "var(--color-ink-faint)" } };
 const _hoisted_9$1 = { style: { "color": "var(--color-ink)", "font-weight": "600", "font-family": "var(--font-mono)" } };
-const _hoisted_10 = { style: { "color": "var(--color-ink)", "font-weight": "600" } };
+const _hoisted_10$1 = { style: { "color": "var(--color-ink)", "font-weight": "600" } };
 const _hoisted_11 = ["title"];
 const _hoisted_12 = {
   key: 0,
@@ -2400,7 +2401,7 @@ const _sfc_main$2 = {
                   __hote$2.createElementVNode("span", { style: petit }, [
                     l.a.prochaine ? (__hote$2.openBlock(), __hote$2.createElementBlock(__hote$2.Fragment, { key: 0 }, [
                       _cache[11] || (_cache[11] = __hote$2.createTextVNode("Prochaine : ", -1)),
-                      __hote$2.createElementVNode("b", _hoisted_10, __hote$2.toDisplayString(__hote$2.unref(quand)(l.a.prochaine, __hote$2.unref(etat).fuseau)), 1)
+                      __hote$2.createElementVNode("b", _hoisted_10$1, __hote$2.toDisplayString(__hote$2.unref(quand)(l.a.prochaine, __hote$2.unref(etat).fuseau)), 1)
                     ], 64)) : (__hote$2.openBlock(), __hote$2.createElementBlock(__hote$2.Fragment, { key: 1 }, [
                       __hote$2.createTextVNode(__hote$2.toDisplayString(l.a.jours === 0 && l.a.derniere_echeance ? "Passée, désactivée" : "Désactivée"), 1)
                     ], 64))
@@ -2555,6 +2556,7 @@ const _hoisted_6$1 = { key: 1 };
 const _hoisted_7 = { style: { "color": "var(--color-ink)", "font-family": "var(--font-mono)" } };
 const _hoisted_8 = { key: 2 };
 const _hoisted_9 = { style: { "display": "inline-flex", "align-items": "center", "gap": "var(--space-1)" } };
+const _hoisted_10 = { key: 0 };
 const _sfc_main$1 = {
   __name: "Seance",
   props: { annonce: { type: Object, default: null }, etroit: Boolean, arret: Boolean, erreurArret: { type: String, default: "" } },
@@ -2791,7 +2793,8 @@ const _sfc_main$1 = {
             __hote$2.createElementVNode("span", _hoisted_9, [
               __hote$2.createVNode(_sfc_main$6, { nom: "clock" }),
               __hote$2.createTextVNode(" " + __hote$2.toDisplayString(finTexte.value), 1)
-            ])
+            ]),
+            s.value.relances ? (__hote$2.openBlock(), __hote$2.createElementBlock("span", _hoisted_10, "Relancée " + __hote$2.toDisplayString(s.value.relances) + " fois : l'ampli a lâché la lecture", 1)) : __hote$2.createCommentVNode("", true)
           ])
         ]),
         __hote$2.createElementVNode("div", {

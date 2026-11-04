@@ -56,7 +56,8 @@ class Lien:
         self.attente_min = attente_min
         self.attente_max = attente_max
         self.journal = journal or logging.getLogger("unisson.plugin.denon")
-        self.etat = {"connected": False, "power": None, "volume": None, "mute": None, "source": None, "updatedAt": None}
+        self.etat = {"connected": False, "power": None, "volume": None, "mute": None, "source": None, "zone": None,
+                     "updatedAt": None}
         self._file: asyncio.Queue = asyncio.Queue()
         self._ecrivain: asyncio.StreamWriter | None = None
         self._arrete = False

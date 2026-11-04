@@ -19,7 +19,7 @@ def test_volume_aux_deux_formats(brut, attendu):
     assert lire_volume(brut) == attendu
 
 
-@pytest.mark.parametrize("ligne", ["MVMAX 98", "MVUP", "ZMON", "SI", "", "PW"])
+@pytest.mark.parametrize("ligne", ["MVMAX 98", "MVUP", "ZM", "SI", "", "PW"])
 def test_trames_sans_effet(ligne):
     etat = {}
     assert not P.lire(etat, ligne)
@@ -31,6 +31,14 @@ def test_veille_et_sourdine():
     P.lire(etat, "PWSTANDBY")
     P.lire(etat, "MUON")
     assert etat == {"power": False, "mute": True}
+
+
+def test_la_zone_principale_est_lue():
+    """`ZMOFF` sans `PWSTANDBY` (une zone 2 joue encore) : sans cette
+    lecture, le réveil ne voyait pas la zone éteinte et relançait (V6)."""
+    etat = {}
+    assert P.lire(etat, "ZMOFF") and etat == {"zone": False}
+    assert P.lire(etat, "ZMON") and etat == {"zone": True}
 
 
 @pytest.mark.parametrize("db, commande", [(-35, "MV450"), (-20.5, "MV595"), (-80, "MV000"), (18, "MV980"), (-20.25, "MV598"), (-20.75, "MV593")])

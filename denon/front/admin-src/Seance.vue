@@ -51,6 +51,7 @@
           <span v-else>Volume {{ db(s.volume ?? s.volume_cible) }}, atteint</span>
         </span>
         <span style="display: inline-flex; align-items: center; gap: var(--space-1)"><Icone nom="clock" /> {{ finTexte }}</span>
+        <span v-if="s.relances">Relancée {{ s.relances }} fois : l'ampli a lâché la lecture</span>
       </div>
     </div>
     <div :style="finStyle">

@@ -61,6 +61,10 @@ class Avrx4000:
             etat["power"] = True
         elif ligne.startswith("PWSTANDBY"):
             etat["power"] = False
+        elif ligne in ("ZMON", "ZMOFF"):
+            # La zone principale : `ZMOFF` sans `PWSTANDBY` quand une autre
+            # zone joue encore. Le réveil la lit comme une mise en veille.
+            etat["zone"] = ligne == "ZMON"
         elif ligne == "MUON":
             etat["mute"] = True
         elif ligne == "MUOFF":

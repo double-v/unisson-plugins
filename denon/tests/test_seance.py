@@ -9,6 +9,7 @@
 
 import asyncio
 import contextlib
+import logging
 import time as chrono
 from dataclasses import dataclass, replace
 
@@ -26,7 +27,8 @@ from denon.tests.aides import attendre, port_libre
 from denon.tests.aides_reveil import PARIS, Horloge, a_paris, alarme, relire
 
 CADENCE = Cadence(suivi_s=0.1, minute_s=1.0, attente_lien_s=0.5, essais_play=3, attente_play_s=0.5, refus_s=0.1,
-                  arret_s=1.0, marge_fin_s=0.3, budget_arret_s=2.0, attente_source_s=0.3)
+                  arret_s=1.0, marge_fin_s=0.3, budget_arret_s=2.0, attente_source_s=0.3,
+                  attente_relance_s=0.2)
 
 
 def contexte():
@@ -558,9 +560,10 @@ async def test_trois_lectures_refusees_de_suite_finissent_en_lecture_impossible(
 # ── quelqu'un reprend la main ───────────────────────────────────────────
 
 
-@pytest.mark.parametrize("geste", ["autre_source", "stop", "pause", "autre_media", "veille"])
+@pytest.mark.parametrize("geste", ["autre_source", "stop", "pause", "autre_media", "veille", "zone", "sourdine"])
 async def test_reprise_de_la_main_sans_mise_en_veille(banc, adresse, longues, db_session, geste):
-    b = await banc()
+    # Le Stop, seul, est d'abord relancé (plus bas) : ici, on juge le geste.
+    b = await banc(cadence=replace(CADENCE, relances_max=0) if geste == "stop" else CADENCE)
     pl = await playlist(db_session, longues[:2])
     a, _ = await b.lancer(contexte="playlist", contexte_id=pl, fin_mode="sans_limite", fin_valeur=None, montee_s=0)
     await attendre(lambda: b.dmr.etat == "PLAYING"
@@ -574,6 +577,11 @@ async def test_reprise_de_la_main_sans_mise_en_veille(banc, adresse, longues, db
         b.dmr.pause_externe()
     elif geste == "autre_media":
         b.dmr.jouer_autre("http://192.0.2.50/radio.mp3")
+    elif geste == "zone":  # une zone 2 joue encore : ZMOFF sans PWSTANDBY (V6)
+        await b.ampli.pousser("ZMOFF\r")
+        b.dmr.stop_externe()
+    elif geste == "sourdine":
+        await b.ampli.pousser("MUON\r")
     else:
         await b.ampli.pousser("PWSTANDBY\r")
     assert await b.fin() == "reprise_en_main"
@@ -582,7 +590,7 @@ async def test_reprise_de_la_main_sans_mise_en_veille(banc, adresse, longues, db
 
 
 async def test_sans_duree_un_stop_pendant_que_reltime_avance_est_une_reprise(banc, adresse, longues, db_session):
-    b = await banc()
+    b = await banc(cadence=replace(CADENCE, relances_max=0))
     pl = await playlist(db_session, longues[2:3])  # TrackDuration NOT_IMPLEMENTED, pas de durée en base
     await b.lancer(contexte="playlist", contexte_id=pl, fin_mode="sans_limite", fin_valeur=None, montee_s=0)
     await attendre(lambda: b.dmr.etat == "PLAYING", delai=10)
@@ -590,6 +598,210 @@ async def test_sans_duree_un_stop_pendant_que_reltime_avance_est_une_reprise(ban
     b.dmr.stop_externe()
     assert await b.fin() == "reprise_en_main"
     assert len(b.dmr.jouees) == 1
+
+
+# ── l'ampli qui lâche seul (2026-11-04) ─────────────────────────────────
+
+
+async def test_un_stop_que_rien_n_explique_relance_la_suivante(banc, adresse, longues, db_session, caplog):
+    """Le réveil du 2026-11-04 : PLAYING, RelTime qui avance, ampli sur le
+    réseau, puis STOPPED à 38 s sans aucun geste. La séance relance au lieu
+    de se retirer, et le journal dit ce que l'ampli faisait."""
+    caplog.set_level(logging.INFO, logger="unisson.plugin.denon")
+    b = await banc()
+    b.dmr.arret_apres_s = {url_de(adresse, longues[0]): 1.0}  # au-delà de la fenêtre de refus
+    pl = await playlist(db_session, longues[:2])
+    await b.lancer(contexte="playlist", contexte_id=pl, fin_mode="sans_limite", fin_valeur=None, montee_s=0)
+    await attendre(lambda: len(b.dmr.jouees) == 2 and b.dmr.etat == "PLAYING", delai=10)
+    assert b.seances.en_cours
+    assert b.dmr.jouees == [url_de(adresse, longues[0]), url_de(adresse, longues[1])]
+    messages = caplog.messages
+    assert any("relance 1/2" in m for m in messages)
+    assert any("lecteur : PLAYING → STOPPED" in m for m in messages)
+    assert any("STOPPED à" in m and "source NET" in m and "alimentation True" in m for m in messages)
+    assert any(m.endswith("ampli : SINET") for m in messages)
+    assert not any("reprend la main" in m for m in messages)
+    assert any("statut transport OK" in m and "telnet connecté" in m for m in messages)
+    assert b.seances.vue()["seance"]["relances"] == 1  # à l'écran, pas seulement au journal (V9)
+    assert await b.seances.arreter() is True
+    assert await b.fin() == "arretee"
+
+
+async def test_au_dela_des_relances_le_stop_est_une_reprise(banc, adresse, longues, db_session):
+    """Trois Stop de suite : quelqu'un insiste. La séance se retire sans
+    mise en veille, après deux relances."""
+    b = await banc()
+    pl = await playlist(db_session, longues[:2])
+    await b.lancer(contexte="playlist", contexte_id=pl, fin_mode="sans_limite", fin_valeur=None, montee_s=0)
+    for n in (1, 2, 3):
+        await attendre(lambda: len(b.dmr.jouees) == n and b.dmr.etat == "PLAYING", delai=10)
+        await asyncio.sleep(0.8)  # en milieu de piste, hors fenêtre de refus
+        b.dmr.stop_externe()
+    assert await b.fin() == "reprise_en_main"
+    assert len(b.dmr.jouees) == 3
+    assert b.dmr.jouees[1] == url_de(adresse, longues[1])  # la suivante, pas la même
+    assert "ZMOFF" not in b.telnet()
+    assert b.seances.derniere["sautees"] == []
+
+
+async def test_une_autre_entree_arrivee_avec_le_stop_n_est_pas_relancee(banc, adresse, longues, db_session, caplog):
+    """La télécommande passe sur TV : l'ampli coupe le DLNA, et la trame SI
+    arrive après le STOPPED. Relancer rallumerait l'entrée réseau."""
+    caplog.set_level(logging.INFO, logger="unisson.plugin.denon")
+    b = await banc(cadence=replace(CADENCE, attente_relance_s=0.5))
+    pl = await playlist(db_session, longues[:2])
+    await b.lancer(contexte="playlist", contexte_id=pl, fin_mode="sans_limite", fin_valeur=None, montee_s=0)
+    await attendre(lambda: b.dmr.etat == "PLAYING" and b.lien.etat["source"] == "NET", delai=10)
+    await asyncio.sleep(0.8)
+    b.dmr.stop_externe()
+    # Le STOPPED est jugé (la séance attend), puis la trame arrive (V11).
+    await attendre(lambda: "STOPPED à" in caplog.text, delai=5)
+    await b.ampli.pousser("SITV\r")
+    assert await b.fin() == "reprise_en_main"
+    assert len(b.dmr.jouees) == 1
+    assert "ZMOFF" not in b.telnet()
+
+
+async def test_sans_suivante_la_piste_interrompue_est_rejouee(banc, adresse, longues, db_session, caplog):
+    """L'ampli lâche sur la dernière piste : la séance la rejoue, plutôt que
+    de laisser l'ampli allumé sans musique."""
+    caplog.set_level(logging.INFO, logger="unisson.plugin.denon")
+    b = await banc()
+    url = url_de(adresse, longues[0])
+    b.dmr.arret_apres_s = {url: 1.0}
+    pl = await playlist(db_session, longues[:1])
+    await b.lancer(contexte="playlist", contexte_id=pl, fin_mode="pistes", fin_valeur=1, montee_s=0)
+    # La ligne part une fois PLAYING constaté par la séance : l'attendre aussi.
+    await attendre(lambda: any("rejouée" in m for m in caplog.messages), delai=10)
+    assert b.dmr.jouees == [url, url]
+    assert b.seances.en_cours
+    assert await b.seances.arreter() is True
+    assert await b.fin() == "arretee"
+
+
+async def test_un_stop_rapide_apres_une_relance_est_un_stop_de_plus(banc, adresse, longues, db_session):
+    """V1 : un Stop juste après la relance n'est pas une lecture refusée.
+    Sinon chaque Stop rapide relançait encore, bien au-delà de
+    `relances_max`, et finissait en veille sous `lecture_impossible`."""
+    b = await banc(cadence=replace(CADENCE, refus_s=2.0))  # fenêtre de refus : 2,5 s
+    pl = await playlist(db_session, longues[:2])
+    await b.lancer(contexte="playlist", contexte_id=pl, fin_mode="sans_limite", fin_valeur=None, montee_s=0)
+    await attendre(lambda: b.dmr.etat == "PLAYING", delai=10)
+    await asyncio.sleep(2.8)  # le premier, hors fenêtre de refus
+    b.dmr.stop_externe()
+    for n in (2, 3):
+        await attendre(lambda: len(b.dmr.jouees) == n and b.dmr.etat == "PLAYING", delai=10)
+        await asyncio.sleep(0.3)  # aussitôt la musique revenue
+        b.dmr.stop_externe()
+    assert await b.fin() == "reprise_en_main"
+    assert len(b.dmr.jouees) == 3
+    assert b.seances.derniere["sautees"] == []
+    assert "ZMOFF" not in b.telnet()
+
+
+async def test_une_veille_recouverte_avant_la_relance_est_vue(banc, adresse, longues, db_session, caplog):
+    """V2 : la veille arrive après le STOPPED, puis un PWON la recouvre dans
+    `lien.etat`. Le geste est retenu par l'écouteur : pas de relance."""
+    caplog.set_level(logging.INFO, logger="unisson.plugin.denon")
+    b = await banc(cadence=replace(CADENCE, attente_relance_s=0.5))
+    pl = await playlist(db_session, longues[:2])
+    await b.lancer(contexte="playlist", contexte_id=pl, fin_mode="sans_limite", fin_valeur=None, montee_s=0)
+    await attendre(lambda: b.dmr.etat == "PLAYING", delai=10)
+    await asyncio.sleep(0.8)
+    b.dmr.stop_externe()
+    await attendre(lambda: "STOPPED à" in caplog.text, delai=5)
+    await b.ampli.pousser("PWSTANDBY\rPWON\r")
+    assert await b.fin() == "reprise_en_main"
+    assert len(b.dmr.jouees) == 1
+
+
+async def test_un_geste_pendant_la_relance_la_coupe(banc, adresse, longues, db_session):
+    """V2 : l'autre entrée arrive pendant que la relance démarre. La piste
+    vient de partir contre le geste : la séance envoie Stop."""
+    b = await banc()
+    b.dmr.demarrage_s = 0.3  # TRANSITIONING après chaque Play
+    pl = await playlist(db_session, longues[:2])
+    await b.lancer(contexte="playlist", contexte_id=pl, fin_mode="sans_limite", fin_valeur=None, montee_s=0)
+    await attendre(lambda: b.dmr.etat == "PLAYING" and b.lien.etat["source"] == "NET", delai=10)
+    await asyncio.sleep(0.8)
+    b.dmr.stop_externe()
+    await attendre(lambda: len(b.dmr.jouees) == 2, delai=5)  # la relance démarre
+    await b.ampli.pousser("SITV\r")
+    assert await b.fin() == "reprise_en_main"
+    assert [x for x in b.dmr.actions() if not x.startswith("Get")][-1] == "Stop"
+
+
+async def test_telnet_coupe_pas_de_relance(banc, adresse, longues, db_session):
+    """V2 : sans lien telnet, une veille serait invisible ; relancer
+    pourrait rallumer un ampli qu'on vient d'éteindre."""
+    b = await banc()
+    pl = await playlist(db_session, longues[:2])
+    await b.lancer(contexte="playlist", contexte_id=pl, fin_mode="sans_limite", fin_valeur=None, montee_s=0)
+    await attendre(lambda: b.dmr.etat == "PLAYING", delai=10)
+    await asyncio.sleep(0.8)
+    await b.ampli.arreter()  # plus de reconnexion possible
+    await attendre(lambda: not b.lien.connecte, delai=5)
+    b.dmr.stop_externe()
+    assert await b.fin() == "reprise_en_main"
+    assert len(b.dmr.jouees) == 1
+
+
+async def test_un_lecteur_qui_refuse_tout_apres_une_relance_finit(banc, adresse, longues, db_session):
+    """V3 : après le Stop, l'ampli refuse toutes les lectures. Les lots se
+    rechargeaient sans fin ; trois refus de suite donnent
+    `lecture_impossible`, et l'ampli retourne en veille."""
+    b = await banc()
+    urls = {url_de(adresse, p) for p in longues[:2]}
+    pl = await playlist(db_session, longues[:2])
+    await b.lancer(contexte="playlist", contexte_id=pl, fin_mode="sans_limite", fin_valeur=None, montee_s=0)
+    await attendre(lambda: b.dmr.etat == "PLAYING", delai=10)
+    await asyncio.sleep(0.8)
+    b.dmr.urls_refusees = urls
+    b.dmr.stop_externe()
+    assert await b.fin(delai=15) == "lecture_impossible"
+    assert [s["code"] for s in b.seances.derniere["sautees"]] == ["lecture_refusee"] * 3
+    assert b.telnet()[-1] == "ZMOFF"
+
+
+async def test_une_relance_refusee_remet_l_ampli_en_veille(banc, adresse, longues, db_session):
+    """V4 : la dernière piste, rejouée, est refusée. Se retirer laissait
+    l'ampli allumé sans musique (l'incident même) sous « reprise en main »."""
+    b = await banc()
+    url = url_de(adresse, longues[0])
+    pl = await playlist(db_session, longues[:1])
+    await b.lancer(contexte="playlist", contexte_id=pl, fin_mode="pistes", fin_valeur=1, montee_s=0)
+    await attendre(lambda: b.dmr.etat == "PLAYING", delai=10)
+    await asyncio.sleep(0.8)
+    b.dmr.urls_refusees = {url}
+    b.dmr.stop_externe()
+    assert await b.fin() == "lecture_impossible"
+    assert b.telnet()[-1] == "ZMOFF"
+
+
+async def test_une_piste_allee_au_bout_remet_les_relances_a_zero(banc, adresse, pistes, db_session):
+    """V7 : deux hoquets séparés par une piste jouée en entier sont deux
+    relances, pas « quelqu'un qui insiste »."""
+    b = await banc(cadence=replace(CADENCE, relances_max=1))
+    b.dmr.arret_apres_s = {url_de(adresse, pistes[0]): 1.0, url_de(adresse, pistes[2]): 1.0}
+    pl = await playlist(db_session, pistes[:4])
+    await b.lancer(contexte="playlist", contexte_id=pl, fin_mode="sans_limite", fin_valeur=None, montee_s=0)
+    await attendre(lambda: url_de(adresse, pistes[3]) in b.dmr.jouees and b.dmr.etat == "PLAYING", delai=20)
+    assert b.seances.en_cours
+    assert b.seances.vue()["seance"]["relances"] == 2
+    assert await b.seances.arreter() is True
+    assert await b.fin() == "arretee"
+
+
+async def test_l_echeance_pendant_l_attente_ne_lance_rien(banc, adresse, longues, db_session):
+    """V8 : en `duree`, l'heure de fin tombe pendant la seconde d'attente.
+    Pas de nouvelle piste : Stop puis veille."""
+    b = await banc(cadence=replace(CADENCE, attente_relance_s=1.0))
+    b.dmr.arret_apres_s = {url_de(adresse, longues[0]): 1.4}
+    pl = await playlist(db_session, longues[:2])
+    await b.lancer(contexte="playlist", contexte_id=pl, fin_mode="duree", fin_valeur=2, montee_s=0)
+    assert await b.fin() == "joue"
+    assert len(b.dmr.jouees) == 1
+    assert b.telnet()[-1] == "ZMOFF"
 
 
 # ── une seule séance à la fois ──────────────────────────────────────────
