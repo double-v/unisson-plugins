@@ -3,7 +3,7 @@ nom = "Convertir en MP3"
 version = "0.1.0"
 description = "Convertir en MP3 tagué les WMA qu'unisson ne sait pas taguer ; les originaux vont à la corbeille, révocable."
 categorie = "officiel"
-coeur = ">=0.8"
+coeur = ">=0.9"
 actif_par_defaut = false
 
 [front_abi]

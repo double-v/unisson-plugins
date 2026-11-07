@@ -4,7 +4,7 @@ Un WMA à 192 kbps sans tags vaut moins qu'un MP3 au même débit qu'on peut
 nommer, taguer et retrouver : ce plugin réencode les WMA avec perte d'un
 album en MP3 (LAME, CBR au premier palier au moins égal à la source),
 recopie leurs tags ASF en ID3v2.4, puis laisse le cœur poser les MP3 et
-mettre les WMA à la corbeille (`ctx.remplacer_pistes`, cœur ≥ 0.8). Tout
+mettre les WMA à la corbeille (`ctx.remplacer_pistes`, cœur ≥ 0.9). Tout
 passe par le tampon et le mode édition, et se révoque.
 """
 

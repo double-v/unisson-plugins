@@ -6,7 +6,7 @@ d'un album en MP3, recopie leurs tags, et laisse le cœur poser les MP3 et
 mettre les WMA à la corbeille. L'album rentre ensuite dans le circuit normal :
 retagage sûr, renommage, « Corriger ».
 
-Demande le cœur **≥ 0.8** (`ctx.remplacer_pistes`) et `ffmpeg`/`ffprobe` sur
+Demande le cœur **≥ 0.9** (`ctx.remplacer_pistes`) et `ffmpeg`/`ffprobe` sur
 le serveur (déjà dans l'image d'unisson).
 
 ## Ce qu'il fait
@@ -83,7 +83,7 @@ npm install && npm run build   # → front/admin/index.js (committé)
 
 ## Tests
 
-Depuis un checkout d'unisson (cœur ≥ 0.8), avec ffmpeg :
+Depuis un checkout d'unisson (cœur ≥ 0.9), avec ffmpeg :
 
 ```sh
 PYTHONPATH=. TEST_DATABASE_URL=… python -m pytest ../unisson-plugins/convertir/tests \
