@@ -128,7 +128,12 @@ def nom_valide(nom: str) -> bool:
 def nom_cible(source: str) -> str:
     """Le nom du MP3 : celui du WMA, débarrassé des espaces et points de
     bord qu'un nom de fichier visible ne peut pas porter."""
-    tige = PurePosixPath(source).stem.strip().lstrip(".").strip()
+    # L'extension se coupe à la main : `PurePosixPath.stem` a changé en
+    # Python 3.14 (« ....wma » n'y a plus de suffixe), et le nom produit ne
+    # doit pas dépendre de la version qui fait tourner le cœur.
+    nom = PurePosixPath(source).name
+    tige = nom.rsplit(".", 1)[0] if "." in nom else nom
+    tige = tige.strip().lstrip(".").strip()
     return f"{tige}.mp3" if tige else ""
 
 
