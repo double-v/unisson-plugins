@@ -6,6 +6,7 @@ Le catalogue officiel des plugins d'[unisson](https://github.com/double-v/unisso
 |---|---|
 | [`safeplace`](safeplace/) | Signaler des artistes et proposer de les mettre à la corbeille. Exemple complet du guide. |
 | [`convertir`](convertir/) | Convertir en MP3 tagué les WMA qu'unisson ne sait pas taguer ; les originaux vont à la corbeille, révocable (cœur ≥ 0.9). |
+| [`ntfy`](ntfy/) | Le fil du matin d'unisson sur le téléphone : résumé quotidien et alertes immédiates par ntfy (cœur ≥ 0.11). |
 | [`denon`](denon/) | Partage un ampli Denon (une connexion telnet) entre unisson, Hublot et les autres, avec l'API de `denon-api` ; le réveil (alarmes, séance qui joue la musique par UPnP, et sa page dans l'admin). |
 
 Un plugin se dépose dans `DEDUP_PLUGINS_DIR` (défaut `data/plugins`) puis
