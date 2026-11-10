@@ -1,0 +1,39 @@
+# La fiche du plugin, lue avant tout code.
+id = "ntfy"
+nom = "ntfy"
+version = "1.0.0"
+description = "Le fil du matin d'unisson sur le téléphone : le résumé quotidien et les alertes immédiates, poussés par ntfy."
+categorie = "officiel"
+coeur = ">=0.11"            # ctx.canal_notification, CanalNotification (le fil du matin, unisson#1258)
+actif_par_defaut = false
+
+[apporte]
+routes = false
+
+[[reglages]]
+cle = "serveur"
+type = "str"
+defaut = "https://ntfy.sh"  # ou son propre serveur ntfy, http(s)://hôte[:port]
+
+[[reglages]]
+cle = "sujet"
+type = "str"                # le sujet (topic) auquel le téléphone est abonné ; requis
+
+[[reglages]]
+cle = "jeton"
+type = "str"
+secret = true               # jeton d'accès ntfy (tk_…) ; vide : sujet public
+
+[[reglages]]
+cle = "heure_resume"
+type = "str"
+defaut = "07:30"            # heure locale du serveur, HH:MM ; vide : pas de résumé
+
+[[reglages]]
+cle = "gravite_alerte"
+type = "str"
+defaut = "avertissement"    # info | avertissement | critique ; vide : pas d'alerte immédiate
+
+[[reglages]]
+cle = "lien_fil"
+type = "str"                # l'adresse du fil ouverte au clic ; vide : <adresse réseau d'unisson>/admin/fil
