@@ -7,6 +7,7 @@ priorité, le jeton, le lien profond vers le fil.
 
 import logging
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -16,7 +17,7 @@ REGLAGES = f"/api/plugins/{ID}/settings"
 
 
 def _local(*a) -> datetime:
-    return datetime(*a).astimezone()
+    return datetime(*a, tzinfo=ZoneInfo("Europe/Paris"))
 
 
 async def _regler(client, **valeurs):
@@ -103,8 +104,12 @@ async def test_un_reglage_change_vaut_sans_reactiver(charge, ntfy_serveur):
     await _regler(client, gravite_alerte="avertissement")
     await _emettre("acquisition.echec", "Little Simz — Lotus II : en échec", _local(2026, 11, 10, 5, 3))
     await _tick(_local(2026, 11, 10, 5, 4))
-    assert [(r["json"]["title"], r["json"]["priority"]) for r in ntfy_serveur.recus] == [
-        ("Little Simz — Lotus II : en échec", 4)
+    # Le seuil abaissé vaut aussi pour l'échec de 5 h 01, encore dans la
+    # fenêtre des alertes et jamais parti : les deux partent ensemble.
+    [recu] = ntfy_serveur.recus
+    assert (recu["json"]["title"], recu["json"]["priority"]) == ("2 alertes", 4)
+    assert recu["json"]["message"].splitlines() == [
+        "• Kaytranada — Ultra Light : en échec", "• Little Simz — Lotus II : en échec",
     ]
 
 
@@ -187,3 +192,29 @@ def test_un_titre_accentue_part_en_json_intact():
     m = MessageNotification(genre="resume", titre="2 à décider · 38 rangés", texte="", gravite="info", lien=None)
     j = corps(m, "unisson-matin", None)
     assert (j["title"], j["message"], "click" in j) == ("unisson · 2 à décider · 38 rangés", "2 à décider · 38 rangés", False)
+
+
+async def test_le_mot_de_passe_d_une_adresse_ne_part_pas_au_journal(charge, caplog):
+    client = charge
+    ferme = port_ferme().replace("http://", "http://alice:motdepasse@")
+    await _regler(client, serveur=ferme, sujet="unisson-matin")
+    await _activer(client)
+    await _tick(_local(2026, 11, 10, 5, 0))
+    await _emettre("disque.espace_bas", "disque plein", _local(2026, 11, 10, 5, 1))
+    with caplog.at_level(logging.WARNING):
+        await _tick(_local(2026, 11, 10, 5, 2))
+    lignes = [r.getMessage() for r in caplog.records if "ntfy.push" in r.getMessage()]
+    assert lignes and "***@127.0.0.1" in lignes[0]
+    assert not any("motdepasse" in r.getMessage() or "alice" in r.getMessage() for r in caplog.records)
+
+
+def test_un_long_message_est_coupe_sous_la_limite_de_ntfy():
+    from ntfy.backend import MAX_OCTETS, corps
+    from unisson.plugin import MessageNotification
+
+    texte = "\n".join(f"• Arrivée à trier n° {i} — un titre accentué é è à" for i in range(400))
+    m = MessageNotification(genre="resume", titre="400 à décider", texte=texte, gravite="info")
+    message = corps(m, "unisson-matin", None)["message"]
+    assert len(message.encode("utf-8")) <= MAX_OCTETS
+    assert message.endswith("… (suite dans le fil)")
+    assert message.startswith("• Arrivée à trier n° 0")

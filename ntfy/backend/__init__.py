@@ -33,15 +33,39 @@ _SUJET = re.compile(r"^[-_A-Za-z0-9]{1,64}$")
 _HEURE = re.compile(r"^(\d{1,2}):(\d{2})$")
 
 
+# ntfy refuse (ou change en pièce jointe) un message au-delà de 4 096 octets :
+# on coupe avant, sur une frontière de caractère, et on le dit.
+MAX_OCTETS = 3500
+SUITE = "\n… (suite dans le fil)"
+
+
 class NtfyInjoignable(RuntimeError):
-    """Le serveur n'a pas pris le message : le motif, jamais le jeton."""
+    """Le serveur n'a pas pris le message : le motif, jamais le jeton ni le
+    mot de passe d'une adresse `https://user:pass@hôte`."""
+
+
+def masquer(url: str) -> str:
+    """L'adresse sans son `user:pass@` : elle part au journal."""
+    parties = urlsplit(url)
+    if "@" not in parties.netloc:
+        return url
+    hote = parties.netloc.rsplit("@", 1)[1]
+    return parties._replace(netloc=f"***@{hote}").geturl()
+
+
+def tronquer(texte: str, max_octets: int = MAX_OCTETS) -> str:
+    brut = texte.encode("utf-8")
+    if len(brut) <= max_octets:
+        return texte
+    garde = max_octets - len(SUITE.encode("utf-8"))
+    return brut[:garde].decode("utf-8", errors="ignore") + SUITE
 
 
 def valider_serveur(url: str) -> str:
     url = (url or "").strip().rstrip("/")
     parties = urlsplit(url)
     if parties.scheme not in ("http", "https") or not parties.netloc:
-        raise ValueError(f"serveur ntfy « {url} » : une adresse http(s)://hôte est attendue")
+        raise ValueError(f"serveur ntfy « {masquer(url)} » : une adresse http(s)://hôte est attendue")
     return url
 
 
@@ -73,7 +97,7 @@ def corps(message: MessageNotification, sujet: str, lien_fil: str | None) -> dic
     donnees = {
         "topic": sujet,
         "title": f"unisson · {message.titre}" if resume else message.titre,
-        "message": message.texte or message.titre,
+        "message": tronquer(message.texte or message.titre),
         "priority": 3 if resume else PRIORITES.get(message.gravite, 3),
         "tags": ["sunrise"] if resume else ETIQUETTES.get(message.gravite, []),
     }
@@ -90,9 +114,10 @@ async def publier(serveur: str, jeton: str, donnees: dict) -> None:
         async with httpx.AsyncClient(timeout=DELAI_S) as client:
             r = await client.post(f"{serveur}/", json=donnees, headers=entetes)
     except httpx.HTTPError as e:
-        raise NtfyInjoignable(f"{serveur} injoignable : {e} ({type(e).__name__})") from None
+        # `str(e)` d'httpx peut citer l'URL complète : on ne garde que le type.
+        raise NtfyInjoignable(f"{masquer(serveur)} injoignable ({type(e).__name__})") from None
     if r.status_code >= 400:
-        raise NtfyInjoignable(f"{serveur} a refusé le message : HTTP {r.status_code} {r.text[:200]}")
+        raise NtfyInjoignable(f"{masquer(serveur)} a refusé le message : HTTP {r.status_code} {r.text[:200]}")
 
 
 def enregistrer(ctx: Contexte) -> None:

@@ -13,14 +13,16 @@ plugin n'a ni table ni écran : ses réglages se posent depuis la page
 
 ## Ce qu'il fait
 
-- **Résumé quotidien**, à `heure_resume` (heure locale du serveur
-  d'unisson) : les comptes depuis le résumé précédent (« 2 à décider · 38
+- **Résumé quotidien**, à `heure_resume` (dans le fuseau réglé d'unisson,
+  `fuseau`, défaut `Europe/Paris`) : les comptes depuis le résumé précédent (« 2 à décider · 38
   rangés · 1 échec »), puis ce qui attend une décision et ce qui a échoué.
   Rien de neuf : rien n'est envoyé. Un redémarrage après l'heure ne le
   renvoie pas.
 - **Alertes immédiates** : chaque événement d'une gravité au moins égale à
-  `gravite_alerte` part dans la minute (au commit de l'événement). Au-delà
-  de cinq en attente, un seul message « N alertes ». Priorité ntfy : 4 pour
+  `gravite_alerte` part au commit de l'événement, **au plus un message par
+  minute** : ce qui arrive pendant la minute part ensemble (« N alertes »).
+  Un message trop long est coupé sous la limite de ntfy (3 500 octets),
+  « … (suite dans le fil) ». Priorité ntfy : 4 pour
   `avertissement` (un téléchargement en échec), 5 pour `critique` (l'espace
   disque sous le minimum).
 - **Lien profond** : la notification ouvre le fil (`click`, et un bouton
@@ -28,7 +30,8 @@ plugin n'a ni table ni écran : ses réglages se posent depuis la page
   (Paramètres → Réseau) ; `lien_fil` la remplace, par exemple pour une
   adresse publique derrière un proxy.
 - **Serveur injoignable** : rien d'autre n'attend. L'échec est journalisé
-  (journal `backend.services.fil` du cœur, avec le code HTTP, jamais le jeton) ; une alerte
+  (journal `backend.services.fil` du cœur, avec le code HTTP, jamais le
+  jeton ni le `user:pass@` d'une adresse) ; une alerte
   est retentée cinq minutes plus tard tant qu'elle a moins de six heures, le
   résumé jusqu'à la fin du jour. Le fil, lui, reste dans l'admin.
 
@@ -53,7 +56,7 @@ prendre un nom long et imprévisible, ou un serveur à soi avec un jeton.
 ## Retour arrière
 
 Désactiver le plugin retire le canal : plus rien ne part, le fil reste dans
-l'admin. Rien n'est écrit ailleurs qu'en base (`fil_canaux`, la mémoire du
+l'admin. Rien n'est écrit ailleurs qu'en base (`fil_canaux` et `fil_envois`, la mémoire du
 dernier envoi, tenue par le cœur).
 
 ## Tests
