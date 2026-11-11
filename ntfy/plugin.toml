@@ -4,7 +4,7 @@ nom = "ntfy"
 version = "1.0.0"
 description = "Le fil du matin d'unisson sur le téléphone : le résumé quotidien et les alertes immédiates, poussés par ntfy."
 categorie = "officiel"
-coeur = ">=0.11"            # ctx.canal_notification, CanalNotification (le fil du matin, unisson#1258)
+coeur = ">=0.12"            # ctx.canal_notification, CanalNotification (le fil du matin, unisson#1258)
 actif_par_defaut = false
 
 [apporte]

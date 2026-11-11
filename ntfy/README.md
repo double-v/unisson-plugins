@@ -7,7 +7,7 @@ par [ntfy](https://ntfy.sh) : un **résumé** une fois par jour, à l'heure
 choisie, et les **alertes immédiates** dès qu'un événement assez grave
 arrive. Un clic sur la notification ouvre le fil dans l'admin.
 
-Demande le cœur **≥ 0.11** (`ctx.canal_notification`, unisson#1258). Le
+Demande le cœur **≥ 0.12** (`ctx.canal_notification`, unisson#1258). Le
 plugin n'a ni table ni écran : ses réglages se posent depuis la page
 **Plugins** (bouton « Réglages »).
 
@@ -61,7 +61,7 @@ dernier envoi, tenue par le cœur).
 
 ## Tests
 
-Ils tournent dans le harnais du cœur (≥ 0.11), contre un vrai serveur HTTP
+Ils tournent dans le harnais du cœur (≥ 0.12), contre un vrai serveur HTTP
 local qui joue ntfy, et par le vrai chargeur :
 
 ```sh
