@@ -7,7 +7,7 @@ instants, en SQL comme en Python. L'heure d'une alarme, elle, est une heure
 locale, dans le fuseau réglé.
 
 Le plugin lit les tables du cœur (`playlists`, `artists`, `albums`,
-`genres`) en SQL, sans leurs modèles : la lecture est libre.
+`libraries`, ex-`genres` avant le cœur 0.10) en SQL, sans leurs modèles : la lecture est libre.
 """
 
 from __future__ import annotations
@@ -323,7 +323,7 @@ async def verifier_references(session, v: dict) -> None:
         if (await session.execute(text(requetes[v["contexte"]]), {"id": v["contexte_id"]})).first() is None:
             erreurs.append({"champ": "contexte_id", "message": f"{v['contexte']} {v['contexte_id']} introuvable"})
     if v["genre_id"] is not None:
-        if (await session.execute(text("SELECT 1 FROM genres WHERE id = :id"), {"id": v["genre_id"]})).first() is None:
+        if (await session.execute(text("SELECT 1 FROM libraries WHERE id = :id"), {"id": v["genre_id"]})).first() is None:
             erreurs.append({"champ": "genre_id", "message": f"genre {v['genre_id']} introuvable"})
     if erreurs:
         raise Invalide(erreurs)

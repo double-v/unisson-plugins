@@ -5,8 +5,10 @@ d'un artiste reste une opération **du cœur** (`trash_artist`) : le plugin
 la propose au tampon avec la provenance `safeplace`, il ne la possède pas.
 
 Le plugin n'importe du cœur que `unisson.plugin` : il lit les tables de la
-bibliothèque (`artists`, `albums`, `genres`, `tracks`) en SQL, sans leurs
-modèles. Les horodatages sont des chaînes ISO, comme partout dans unisson.
+bibliothèque (`artists`, `albums`, `libraries`, `tracks`) en SQL, sans leurs
+modèles. Depuis le cœur 0.10 (spec 025 US3), `genres` s'appelle `libraries`
+et `genre_id` `library_id` ; l'API du plugin garde `genre_id`/`genre_name`
+pour ne casser aucun écran. Les horodatages sont des chaînes ISO, comme partout dans unisson.
 """
 
 from datetime import datetime, timezone
@@ -20,11 +22,11 @@ _NOM = (
 )
 
 _LIGNE = f"""
-    SELECT f.artist_id, {_NOM} AS artist_name, a.genre_id, g.name AS genre_name,
+    SELECT f.artist_id, {_NOM} AS artist_name, a.library_id AS genre_id, g.name AS genre_name,
            f.reasons, f.severity, f.source_url, f.flagged_by, f.flagged_at, f.pending_review
     FROM plugin_safeplace.artist_flags f
     JOIN artists a ON a.id = f.artist_id
-    LEFT JOIN genres g ON g.id = a.genre_id
+    LEFT JOIN libraries g ON g.id = a.library_id
 """
 
 
@@ -68,7 +70,7 @@ async def lister(session, *, genre_id=None, severity=None, pending_review=None, 
     limit = min(limit, 200)
     conditions, valeurs = [], {"limit": limit, "offset": offset}
     if genre_id is not None:
-        conditions.append("a.genre_id = :genre_id")
+        conditions.append("a.library_id = :genre_id")
         valeurs["genre_id"] = genre_id
     if severity:
         conditions.append("f.severity = :severity")
