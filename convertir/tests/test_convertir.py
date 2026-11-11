@@ -16,7 +16,7 @@ import pytest
 import pytest_asyncio
 from sqlalchemy import select
 
-from backend.models import Album, Artist, Genre, ScanRun, StagedOperation, Track
+from backend.models import Album, Artist, Library, ScanRun, StagedOperation, Track
 
 ffmpeg = pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg absent")
 
@@ -33,13 +33,13 @@ IMAGE = b"\xff\xd8\xff\xe0" + b"jpeg" * 200
 async def album(db_session, convertir, disque, wma):
     """Un album de deux WMA tagués et d'une pochette, en base et sur disque."""
     scan = ScanRun(status="completed", started_at=datetime.now(timezone.utc).isoformat())
-    genre = Genre(name="Albums others", path="Albums others")
-    db_session.add_all([scan, genre])
+    bibliotheque = Library(name="Albums others", path="Albums others")
+    db_session.add_all([scan, bibliotheque])
     await db_session.flush()
-    artiste = Artist(folder_name="Anonyme", name_from_nfo="Anonyme", genre_id=genre.id, folder_path="Albums others/Anonyme")
+    artiste = Artist(folder_name="Anonyme", name_from_nfo="Anonyme", library_id=bibliotheque.id, folder_path="Albums others/Anonyme")
     db_session.add(artiste)
     await db_session.flush()
-    a = Album(artist_id=artiste.id, genre_id=genre.id, folder_name="Concert", folder_path=DOSSIER,
+    a = Album(artist_id=artiste.id, library_id=bibliotheque.id, folder_name="Concert", folder_path=DOSSIER,
               name_from_folder="Concert", scan_run_id=scan.id)
     db_session.add(a)
     await db_session.flush()
