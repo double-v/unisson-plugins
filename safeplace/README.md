@@ -5,6 +5,10 @@ Signaler des artistes (accusations, condamnations) et proposer de les mettre
 un artiste est un choix personnel, pas une fonction de la bibliothèque. C'est
 aussi l'exemple complet du guide des plugins (`docs/plugins.md` du cœur).
 
+Depuis la 1.3.0, il demande le cœur **0.10** : il lit `libraries` et
+`artists.library_id` (ex-`genres` / `genre_id`, spec 025 US3, unisson#1254).
+Son API garde `genre_id` et `genre_name`.
+
 ## Ce qu'il apporte
 
 - **Table `artist_flags`** — une ligne par artiste (`artist_id` unique, clé vers

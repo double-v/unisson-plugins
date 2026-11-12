@@ -8,9 +8,10 @@ du #343 (spec 023 du cœur). Le réveil s'y ajoute (conception :
 [`docs/reveil.md`](docs/reveil.md)) : depuis la 0.2.0, les alarmes et leur
 ordonnanceur ; depuis la 0.3.0, la séance qui allume l'ampli et lui fait
 jouer la musique d'unisson par UPnP. Depuis la 0.4.0, ses écrans : la page
-« Réveil » de l'admin, dans Extensions. Il demande le cœur **0.6** (flux
-pour lecteurs réseau, spec 023 ; garde « même origine » des routes du
-réveil, unisson#1070).
+« Réveil » de l'admin, dans Extensions. Depuis la 0.5.0, il demande le cœur
+**0.10** : la table des bibliothèques s'appelle `libraries` (spec 025 US3,
+unisson#1254). Avant, le cœur 0.6 (flux pour lecteurs réseau, spec 023 ;
+garde « même origine » des routes du réveil, unisson#1070).
 
 ## Ce qu'il apporte
 
