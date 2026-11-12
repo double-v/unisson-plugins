@@ -16,7 +16,7 @@ import pytest
 import pytest_asyncio
 from sqlalchemy import select
 
-from backend.models import Album, Artist, Genre, ScanRun, StagedOperation, Track
+from backend.models import Album, Artist, Library, ScanRun, StagedOperation, Track
 
 ffmpeg = pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg absent")
 
@@ -29,35 +29,43 @@ MBID_PISTE = "a1b2c3d4-e5f6-4789-8abc-def012345678"
 IMAGE = b"\xff\xd8\xff\xe0" + b"jpeg" * 200
 
 
-@pytest_asyncio.fixture
-async def album(db_session, convertir, disque, wma):
-    """Un album de deux WMA tagués et d'une pochette, en base et sur disque."""
+async def _creer_album(db_session, wma, *, bibliotheque: str, chemin_bib: str, dossier: str, disque: Path) -> dict:
+    """Deux WMA tagués et une pochette, en base (`dossier`, chemin logique) et
+    sur le disque (`disque`, là où vit vraiment la bibliothèque)."""
     scan = ScanRun(status="completed", started_at=datetime.now(timezone.utc).isoformat())
-    genre = Genre(name="Albums others", path="Albums others")
-    db_session.add_all([scan, genre])
+    bib = Library(name=bibliotheque, path=chemin_bib)
+    db_session.add_all([scan, bib])
     await db_session.flush()
-    artiste = Artist(folder_name="Anonyme", name_from_nfo="Anonyme", genre_id=genre.id, folder_path="Albums others/Anonyme")
+    artiste = Artist(folder_name="Anonyme", name_from_nfo="Anonyme", library_id=bib.id,
+                     folder_path=f"{bibliotheque}/Anonyme")
     db_session.add(artiste)
     await db_session.flush()
-    a = Album(artist_id=artiste.id, genre_id=genre.id, folder_name="Concert", folder_path=DOSSIER,
+    a = Album(artist_id=artiste.id, library_id=bib.id, folder_name="Concert", folder_path=dossier,
               name_from_folder="Concert", scan_run_id=scan.id)
     db_session.add(a)
     await db_session.flush()
     pistes = []
     for n, debit in ((1, 160), (2, 192)):
         nom = f"Piste {n}.wma"
-        wma(disque / DOSSIER / nom, debit=debit, tags={
+        wma(disque / nom, debit=debit, tags={
             "Title": f"Titre {n}", "Author": "Anonyme", "WM/AlbumTitle": "Concert",
             "WM/TrackNumber": str(n), "WM/Year": "2001", "MusicBrainz/Album Id": MBID_ALBUM,
             "MusicBrainz/Track Id": MBID_PISTE,
         }, image=IMAGE if n == 1 else None)
-        t = Track(album_id=a.id, filename=nom, relative_path=f"{DOSSIER}/{nom}", format="WMA",
+        t = Track(album_id=a.id, filename=nom, relative_path=f"{dossier}/{nom}", format="WMA",
                   bitrate_kbps=debit, duration_seconds=2.0, track_number=n)
         db_session.add(t)
         pistes.append(t)
-    (disque / DOSSIER / "cover.jpg").write_bytes(b"pochette")
+    (disque / "cover.jpg").write_bytes(b"pochette")
     await db_session.commit()
     return {"id": a.id, "pistes": [t.id for t in pistes]}
+
+
+@pytest_asyncio.fixture
+async def album(db_session, convertir, disque, wma):
+    """Un album de deux WMA tagués et d'une pochette, en base et sur disque."""
+    return await _creer_album(db_session, wma, bibliotheque="Albums others", chemin_bib="Albums others",
+                              dossier=DOSSIER, disque=disque / DOSSIER)
 
 
 def _empreinte(racine: Path) -> dict[str, str]:
@@ -395,3 +403,46 @@ async def test_pendant_un_scan_rien_n_est_encode(client, db_session, album, disq
     await apply_staged_batch([op_id])
 
     assert encodages == []
+
+
+# ── Une bibliothèque sur un autre volume (spec 025 US3) ──────────────────
+
+
+@ffmpeg
+async def test_un_album_d_une_bibliotheque_sur_un_autre_volume_se_convertit_et_se_revoque(
+        client, db_session, convertir, disque, wma, tmp_path, monkeypatch):
+    """La bibliothèque `Vinyles` vit hors de la racine (un second dossier,
+    comme un autre volume) : `racine / relative_path` n'y mène pas. L'aperçu
+    lit les WMA là où ils sont, les MP3 sont posés à côté d'eux, et la
+    révocation rend l'album à l'octet près ; rien n'apparaît sous la racine."""
+    from mutagen.mp3 import MP3
+
+    from backend.config import settings
+    from backend.services.file_ops import apply_staged_batch, revert_staged_operation
+
+    vinyles = tmp_path / "disque2" / "Vinyles"
+    vinyles.mkdir(parents=True)
+    monkeypatch.setattr(settings, "library_folders", f"Albums others|{vinyles}")
+    dossier = "Vinyles/Anonyme/Concert"
+    ici = vinyles / "Anonyme" / "Concert"
+    album = await _creer_album(db_session, wma, bibliotheque="Vinyles", chemin_bib=str(vinyles),
+                               dossier=dossier, disque=ici)
+    avant = _empreinte(vinyles)
+
+    vue = (await client.get(APERCU.format(album["id"]))).json()
+
+    assert [(p["motif"], p["nom_cible"]) for p in vue["pistes"]] == [(None, "Piste 1.mp3"), (None, "Piste 2.mp3")]
+    assert vue["a_convertir"] == 2 and vue["corbeille"] == [f"{dossier}/Piste 1.wma", f"{dossier}/Piste 2.wma"]
+
+    op_id = await _tamponner(client, album["id"], album["pistes"])
+    resultat = await apply_staged_batch([op_id])
+
+    assert (resultat["applied"], resultat["errors"]) == (1, []), resultat
+    assert sorted(p.name for p in ici.iterdir()) == ["Piste 1.mp3", "Piste 2.mp3", "cover.jpg"]
+    assert round(MP3(str(ici / "Piste 1.mp3")).info.bitrate / 1000) == 160
+    assert (disque / "trashed" / dossier / "Piste 1.wma").is_file()
+    assert not (disque / "Vinyles").exists()  # rien posé sous la racine
+
+    await revert_staged_operation(op_id)
+
+    assert _empreinte(vinyles) == avant

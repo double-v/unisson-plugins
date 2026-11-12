@@ -4,10 +4,13 @@ Le plan est **recalculé** à l'application, sur le disque courant, et doit
 porter les mêmes pistes que celui qu'on a tamponné : un album rescanné,
 retagué ou déjà converti entre-temps n'est jamais converti à l'aveugle.
 
-Rien n'est déplacé ici : les MP3 sont préparés dans un dossier temporaire,
-puis `ctx.remplacer_pistes` les pose, met les WMA à la corbeille et fait
-pointer chaque ligne de piste sur son MP3 (favoris, playlists et écoutes
-restent), tout ou rien. La révocation est `ctx.retablir_pistes`.
+Un chemin stocké en base se lit par `ctx.chemin_disque` : une bibliothèque
+peut vivre sur un autre volume (spec 025 US3), où `racine / relative_path`
+ne mène pas. Rien n'est déplacé ici : les MP3 sont préparés dans un dossier
+temporaire, puis `ctx.remplacer_pistes` les pose à côté des WMA (sur leur
+volume), met les WMA à la corbeille et fait pointer chaque ligne de piste
+sur son MP3 (favoris, playlists et écoutes restent), tout ou rien. La
+révocation est `ctx.retablir_pistes`.
 """
 
 from __future__ import annotations
@@ -78,7 +81,7 @@ async def scan_en_cours(session) -> bool:
 async def apercu(album_id: int) -> dict | None:
     """Ce que ferait la conversion de l'album, lu sur la base et le disque,
     sans rien écrire. `None` si l'album n'existe pas."""
-    racine = ctx().racine_musique()
+    disque = ctx().chemin_disque
     async with ctx().session() as s:
         album = await _album(s, album_id)
         if album is None:
@@ -86,12 +89,12 @@ async def apercu(album_id: int) -> dict | None:
         pistes = await _pistes(s, album_id)
         scan = await scan_en_cours(s)
     ffmpeg = conversion.ffmpeg_disponible()
-    sondes = await asyncio.gather(*(conversion.sonder(racine / t["relative_path"]) for t in pistes)) if ffmpeg else [None] * len(pistes)
+    sondes = await asyncio.gather(*(conversion.sonder(disque(t["relative_path"])) for t in pistes)) if ffmpeg else [None] * len(pistes)
     decisions = []
     for t, sonde in zip(pistes, sondes):
-        d = conversion.decider(t, sonde, lambda rel: (racine / rel).exists(), ffmpeg=ffmpeg)
+        d = conversion.decider(t, sonde, lambda rel: disque(rel).exists(), ffmpeg=ffmpeg)
         if d.convertible:
-            d.ecartes = await asyncio.to_thread(conversion.ecartes_de, racine / t["relative_path"])
+            d.ecartes = await asyncio.to_thread(conversion.ecartes_de, disque(t["relative_path"]))
         decisions.append(d)
     convertibles = [d for d in decisions if d.convertible]
     return {
@@ -130,13 +133,12 @@ async def appliquer(op) -> dict:
     if sorted(p["track_id"] for p in convertibles) != _attendues(op) or not convertibles:
         raise RefusRemplacement("perime", "l'album a changé depuis l'aperçu")
 
-    racine = ctx().racine_musique()
     atelier = Path(tempfile.mkdtemp(prefix="unisson-convertir-"))
     try:
         remplacements = []
         for p in convertibles:
             cible = atelier / f"{p['track_id']}.mp3"
-            await conversion.convertir(racine / p["source"], cible, p["debit_cible"], p["duree"])
+            await conversion.convertir(ctx().chemin_disque(p["source"]), cible, p["debit_cible"], p["duree"])
             remplacements.append({"track_id": p["track_id"], "fichier": str(cible), "nom": p["nom_cible"]})
         resultat = await ctx().remplacer_pistes(op, remplacements)
     finally:

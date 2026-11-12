@@ -6,8 +6,9 @@ d'un album en MP3, recopie leurs tags, et laisse le cœur poser les MP3 et
 mettre les WMA à la corbeille. L'album rentre ensuite dans le circuit normal :
 retagage sûr, renommage, « Corriger ».
 
-Demande le cœur **≥ 0.9** (`ctx.remplacer_pistes`) et `ffmpeg`/`ffprobe` sur
-le serveur (déjà dans l'image d'unisson).
+Demande le cœur **≥ 0.10** (`ctx.remplacer_pistes`, et `ctx.chemin_disque`
+pour les bibliothèques sur un autre volume) et `ffmpeg`/`ffprobe` sur le
+serveur (déjà dans l'image d'unisson).
 
 ## Ce qu'il fait
 
@@ -23,6 +24,11 @@ le serveur (déjà dans l'image d'unisson).
   la corbeille, ce qui est gardé et pourquoi.
 - **Un outil « Convertir… »** au bout des lignes de la page qualité, qui ouvre
   le même aperçu.
+- **Toutes les bibliothèques**, y compris celles qui vivent sur un autre
+  volume (spec 025 US3) : chaque piste est lue là où elle est
+  (`ctx.chemin_disque`), et ses MP3 sont posés à côté d'elle, sur ce
+  volume. Avant 0.2.0, un album hors de la racine était lu sous la racine
+  et paraissait illisible.
 - Après l'application (et la révocation), le cœur enfile un **scan ciblé** de
   l'album : les MP3 ont leurs lignes sans attendre l'auto-scan.
 
@@ -83,7 +89,7 @@ npm install && npm run build   # → front/admin/index.js (committé)
 
 ## Tests
 
-Depuis un checkout d'unisson (cœur ≥ 0.9), avec ffmpeg :
+Depuis un checkout d'unisson (cœur ≥ 0.10), avec ffmpeg :
 
 ```sh
 PYTHONPATH=. TEST_DATABASE_URL=… python -m pytest ../unisson-plugins/convertir/tests \
