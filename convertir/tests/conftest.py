@@ -36,7 +36,7 @@ async def convertir(tmp_path, monkeypatch):
     await chargeur.charger(app)
     await chargeur.activer("convertir")
     yield
-    chargeur.arreter_tout()
+    await chargeur.arreter_tout()
     etat.vider()
     await _retirer_schema()
 
