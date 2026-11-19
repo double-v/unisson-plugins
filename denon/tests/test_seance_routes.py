@@ -63,7 +63,7 @@ async def test_essayer_suivre_puis_arreter(client, faux_ampli, dmr, denon_instal
     assert vue["piste"]["titre"].startswith("Piste ") and vue["piste"]["artiste"] == "Test Artist"
     assert vue["piste"]["album"] == "Album One" and vue["piste"]["pochette"] is None
     assert vue["volume"] == -42 and vue["fin_mode"] == "sans_limite" and vue["fin_prevue"] is None
-    assert faux_ampli.commandes[4:6] == ["ZMON", "MV380"]
+    assert faux_ampli.commandes[5:7] == ["ZMON", "MV380"]
     assert [c for c in faux_ampli.commandes if c.startswith("SI") and c != "SI?"] == ["SINET"]  # recette du 2026-11-02
 
     r = await client.post(f"{RACINE}/seance/arreter", headers=AUTH)
@@ -87,7 +87,7 @@ async def test_essayer_sans_adresse_reseau(client, faux_ampli, dmr, denon_instal
     assert corps["error"] == "adresse_reseau_non_reglee" and corps["reglage"] == "/admin/settings#reseau"
     assert corps["message"]
     assert (await lire_alarme(client, a["id"]))["dernier_resultat"] == "adresse_reseau_non_reglee"
-    assert faux_ampli.commandes[4:] == []  # l'ampli n'a pas été réveillé pour rien
+    assert faux_ampli.commandes[5:] == []  # l'ampli n'a pas été réveillé pour rien
 
 
 async def test_le_diagnostic(client, faux_ampli, dmr, denon_installe, adresse):

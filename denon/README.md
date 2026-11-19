@@ -11,7 +11,9 @@ jouer la musique d'unisson par UPnP. Depuis la 0.4.0, ses écrans : la page
 « Réveil » de l'admin, dans Extensions. Depuis la 0.5.0, il demande le cœur
 **0.10** : la table des bibliothèques s'appelle `libraries` (spec 025 US3,
 unisson#1254). Avant, le cœur 0.6 (flux pour lecteurs réseau, spec 023 ;
-garde « même origine » des routes du réveil, unisson#1070).
+garde « même origine » des routes du réveil, unisson#1070). Depuis la 0.6.0,
+le flux des états (`GET /api/events`) : suivre l'ampli sans interroger
+`/api/state` en boucle.
 
 ## Ce qu'il apporte
 
@@ -42,6 +44,32 @@ garde « même origine » des routes du réveil, unisson#1070).
   Ampli injoignable : 503 `denon_unreachable`. Si un `jeton` est réglé, toute
   route sauf `/healthz` exige `Authorization: Bearer <jeton>`, sinon 401
   `{"error": "unauthorized"}`.
+- **Le flux des états** (0.6.0), en plus de `denon-api` :
+  `GET /api/events`, au format Server-Sent Events, sous le même jeton.
+  Pour un client qui suit l'ampli (une prise qui allume le caisson de
+  basses avec lui) sans interroger `/api/state` en boucle. **Servi
+  seulement sur l'écoute à part** (`http://<nas>:8100/api/events`), pas
+  sous `/api/plugins/denon/` : uvicorn attend la fin des connexions avant
+  d'arrêter l'app, et unisson le lance sans délai de grâce. Un flux ouvert
+  sur l'app du cœur ne se fermerait qu'à l'arrêt du plugin, qui vient
+  après : unisson ne s'arrêterait plus. L'écoute à part a son propre délai
+  (2 s) et s'arrête avec le plugin. Sans `port_ecoute`, pas de flux.
+  - À la connexion, un événement `state` avec l'état complet, au format
+    exact de `/api/state` (`data:` sur une ligne, JSON compact).
+  - Puis un événement `state` à chaque changement de l'état : une trame qui
+    le change (`PWON`, `ZMOFF`, `MV45`…), la connexion ou la coupure du lien
+    (`connected`). Une trame répétée qui ne change rien n'en fait pas.
+  - Un client lent ne fait pas grossir de file : il reçoit le dernier état.
+    C'est un flux d'**états**, pas de trames : pour chaque trame, la séance
+    du réveil passe par `Lien.ecouter()`, en interne.
+  - Sans changement, un commentaire `: battement` toutes les 20 s : un
+    client qui n'a rien reçu depuis 60 s peut tenir la connexion pour morte.
+  - Le flux se termine quand le plugin est désactivé (dernier état :
+    `connected` à faux), ou quand le jeton change (vérifié à chaque envoi).
+    `retry: 2000` : un `EventSource` se reconnecte seul.
+  - Pour suivre la zone principale, `zone` : le lien la demande (`ZM?`) à
+    chaque connexion, avec `PW?`. `power` reste vrai tant qu'une autre zone
+    joue.
 - **L'écoute à part** (`port_ecoute`, désactivée à 0) : la même API servie
   seule sur un port, à l'adresse exacte de l'ancien conteneur
   (`http://<nas>:8100/api/state`). Hublot bascule ainsi sans changer une

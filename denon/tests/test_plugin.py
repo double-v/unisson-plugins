@@ -29,7 +29,7 @@ async def test_bascule_complete(client, faux_ampli, denon_installe):
     auth = {"Authorization": f"Bearer {JETON}"}
     # Sous unisson.
     assert (await client.get("/api/plugins/denon/api/state")).status_code == 401
-    await attendre(lambda: len(faux_ampli.commandes) == 4)
+    await attendre(lambda: len(faux_ampli.commandes) == 5)
     r = await client.post("/api/plugins/denon/api/power", json={"on": True}, headers=auth)
     assert r.json() == {"accepted": True, "command": "PWON"}
     # Sur l'ancien port de denon-api, le même lien (une seule connexion).
@@ -72,3 +72,47 @@ async def test_pilote_inconnu_refuse_avec_son_motif(client, denon_installe):
     with pytest.raises(Refus, match="pilote Denon inconnu"):
         await denon_installe()
     assert not etat.en_marche("denon")
+
+
+
+async def test_flux_d_evenements_sur_l_ecoute_a_part_ferme_a_la_desactivation(client, faux_ampli, denon_installe):
+    """Par le vrai chargeur : le flux n'est pas monté sous unisson, il est
+    servi par l'écoute à part, suit l'ampli et se termine à la désactivation."""
+    import json
+
+    from backend.plugins import chargeur
+
+    port = port_libre()
+    await regler(client, hote="127.0.0.1", port_telnet=faux_ampli.port, cadence_ms=10, jeton=JETON, port_ecoute=port)
+    await denon_installe()
+    await attendre(lambda: len(faux_ampli.commandes) == 5)
+    auth = {"Authorization": f"Bearer {JETON}"}
+    assert (await client.get("/api/plugins/denon/api/events", headers=auth)).status_code == 404
+
+    async with httpx.AsyncClient(base_url=f"http://127.0.0.1:{port}", headers=auth, timeout=5) as seul:
+        for _ in range(100):
+            try:
+                await seul.get("/healthz")
+                break
+            except httpx.TransportError:
+                await asyncio.sleep(0.02)
+        assert (await seul.get("/api/events", headers={"Authorization": "Bearer faux"})).status_code == 401
+        etats = []
+        async with seul.stream("GET", "/api/events") as r:
+            assert r.headers["content-type"].startswith("text/event-stream")
+            lignes = r.aiter_lines()
+
+            async def etat_suivant():
+                while not (l := await asyncio.wait_for(anext(lignes), 5)).startswith("data: "):
+                    pass
+                etats.append(json.loads(l.removeprefix("data: ")))
+                return etats[-1]
+
+            assert (await etat_suivant())["connected"] is True
+            await faux_ampli.pousser("PWON\rZMON\r")
+            while not (etats[-1]["power"] is True and etats[-1]["zone"] is True):
+                await etat_suivant()
+            desactivation = asyncio.create_task(chargeur.desactiver("denon"))
+            while etats[-1]["connected"] is not False:
+                await etat_suivant()
+            await desactivation

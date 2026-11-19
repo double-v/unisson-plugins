@@ -66,7 +66,7 @@ class Banc:
         return self.seances.derniere["resultat"]
 
     def telnet(self) -> list[str]:
-        return [c for c in self.ampli.commandes if c not in ("PW?", "MV?", "MU?", "SI?")]
+        return [c for c in self.ampli.commandes if c not in PILOTES["avrx4000"].requetes_initiales]
 
 
 @pytest_asyncio.fixture

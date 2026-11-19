@@ -36,8 +36,8 @@ async def lance(faux_ampli):
 
 async def test_requetes_initiales_a_la_cadence(faux_ampli, lance):
     await lance(lien_vers(faux_ampli))
-    await attendre(lambda: len(faux_ampli.recues) == 4)
-    assert faux_ampli.commandes == ["PW?", "MV?", "MU?", "SI?"]
+    await attendre(lambda: len(faux_ampli.recues) == 5)
+    assert faux_ampli.commandes == ["PW?", "ZM?", "MV?", "MU?", "SI?"]
     instants = [t for t, _ in faux_ampli.recues]
     assert all(b - a >= CADENCE * 0.9 for a, b in zip(instants, instants[1:]))
 
