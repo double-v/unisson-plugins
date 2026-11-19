@@ -72,3 +72,31 @@ async def test_pilote_inconnu_refuse_avec_son_motif(client, denon_installe):
     with pytest.raises(Refus, match="pilote Denon inconnu"):
         await denon_installe()
     assert not etat.en_marche("denon")
+
+
+async def test_flux_d_evenements_sous_unisson_ferme_a_la_desactivation(client, faux_ampli, denon_installe):
+    """Monté par le cœur sous `/api/plugins/denon/` : le flux suit l'ampli
+    et se termine à la désactivation (le transport de test rend le corps
+    entier à la fin du flux)."""
+    import json
+
+    from backend.plugins import chargeur
+
+    await regler(client, hote="127.0.0.1", port_telnet=faux_ampli.port, cadence_ms=10, jeton=JETON)
+    await denon_installe()
+    await attendre(lambda: len(faux_ampli.commandes) == 4)
+    auth = {"Authorization": f"Bearer {JETON}"}
+    assert (await client.get("/api/plugins/denon/api/events")).status_code == 401
+
+    requete = asyncio.create_task(client.get("/api/plugins/denon/api/events", headers=auth))
+    await asyncio.sleep(0.2)  # le flux est ouvert et abonné
+    await faux_ampli.pousser("PWON\rZMON\r")
+    await asyncio.sleep(0.2)
+    await chargeur.desactiver("denon")
+    r = await asyncio.wait_for(requete, 5)
+
+    assert r.status_code == 200 and r.headers["content-type"].startswith("text/event-stream")
+    etats = [json.loads(l.removeprefix("data: ")) for l in r.text.splitlines() if l.startswith("data: ")]
+    assert etats[0]["connected"] is True
+    assert any(e["power"] is True and e["zone"] is True for e in etats)
+    assert etats[-1]["connected"] is False

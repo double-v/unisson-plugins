@@ -13,6 +13,10 @@ les envoie à une cadence fixe, se reconnecte avec un délai qui double
 
 La configuration est relue à chaque connexion : changer d'hôte ou de port
 prend effet à la reconnexion suivante.
+
+Deux façons de suivre l'ampli : `ecouter()`, chaque trame qui change l'état
+(la séance du réveil) ; `abonner()`, chaque nouvel état complet, connexion et
+coupure du lien comprises (le flux `/api/events`).
 """
 
 from __future__ import annotations
@@ -41,6 +45,39 @@ class Config:
     cadence_s: float
 
 
+class Abonnement:
+    """Les états successifs du lien pour un client : un état complet remplace
+    le précédent non lu. Un client lent trouve le dernier état, jamais une
+    file qui grossit, et un client qui suit l'ampli n'a besoin que de lui."""
+
+    def __init__(self, retirer: Callable[["Abonnement"], None]):
+        self._retirer = retirer
+        self._dernier: dict | None = None
+        self._signal = asyncio.Event()
+        self.ferme = False
+
+    def _pousser(self, etat: dict) -> None:
+        self._dernier = etat
+        self._signal.set()
+
+    def _clore(self) -> None:
+        self.ferme = True
+        self._signal.set()
+
+    async def suivant(self, delai: float) -> dict | None:
+        """Le dernier état non lu ; `None` après `delai` s sans changement, ou
+        tout de suite une fois l'abonnement fermé (voir `ferme`)."""
+        if self._dernier is None and not self.ferme:
+            with contextlib.suppress(TimeoutError):
+                await asyncio.wait_for(self._signal.wait(), delai)
+        self._signal.clear()
+        etat, self._dernier = self._dernier, None
+        return etat
+
+    def retirer(self) -> None:
+        self._retirer(self)
+
+
 class Lien:
     def __init__(
         self,
@@ -63,6 +100,8 @@ class Lien:
         self._arrete = False
         self.config = config()
         self._ecouteurs: list[Callable[[str], None]] = []
+        self._abonnes: list[Abonnement] = []
+        self._diffuse = self._vu()
 
     def ecouter(self, ecouteur: Callable[[str], None]) -> Callable[[], None]:
         """Appelle `ecouteur(trame)` pour chaque trame qui change l'état, dans
@@ -75,6 +114,34 @@ class Lien:
                 self._ecouteurs.remove(ecouteur)
 
         return retirer
+
+    def abonner(self) -> Abonnement:
+        """Un abonnement aux nouveaux états ; `retirer()` pour s'en aller.
+        Lien arrêté : l'abonnement naît fermé."""
+
+        def retirer(a: Abonnement) -> None:
+            if a in self._abonnes:
+                self._abonnes.remove(a)
+
+        a = Abonnement(retirer)
+        if self._arrete:
+            a._clore()
+        else:
+            self._abonnes.append(a)
+        return a
+
+    def _vu(self) -> dict:
+        return {k: v for k, v in self.etat.items() if k != "updatedAt"}
+
+    def _diffuser(self) -> None:
+        """Pousse l'état aux abonnés s'il a changé : l'ampli répète volontiers
+        une trame (`PWON` à chaque requête `PW?`), sans rien changer."""
+        if (vu := self._vu()) == self._diffuse:
+            return
+        self._diffuse = vu
+        etat = dict(self.etat)
+        for a in list(self._abonnes):
+            a._pousser(etat)
 
     @property
     def connecte(self) -> bool:
@@ -126,10 +193,15 @@ class Lien:
                 _, fut = self._file.get_nowait()
                 if not fut.done():
                     fut.set_exception(Injoignable("Proxy arrêté"))
+            # Les flux en cours se terminent : le plugin est désactivé.
+            for a in self._abonnes:
+                a._clore()
+            self._abonnes.clear()
 
     async def _session(self, lecteur: asyncio.StreamReader, ecrivain: asyncio.StreamWriter) -> None:
         self._ecrivain = ecrivain
         self.etat["connected"] = True
+        self._diffuser()
         self.journal.info("ampli connecté (%s:%s)", self.config.hote, self.config.port)
         for requete in self.pilote.requetes_initiales:
             fut = asyncio.get_running_loop().create_future()
@@ -148,6 +220,7 @@ class Lien:
                                 ecouteur(ligne)
                             except Exception:  # un écouteur ne coupe pas le lien
                                 self.journal.exception("écouteur du lien")
+                        self._diffuser()
         except OSError as e:
             self.journal.debug("lien coupé : %s", e)
         finally:
@@ -159,6 +232,7 @@ class Lien:
             self._ecrivain.close()
         self._ecrivain = None
         self.etat["connected"] = False
+        self._diffuser()
 
     async def _vider(self) -> None:
         while True:
