@@ -35,7 +35,10 @@ class Avrx4000:
     id = "avrx4000"
     libelle = "Denon AVR-X4000"
     port_defaut = 23
-    requetes_initiales = ("PW?", "MV?", "MU?", "SI?")
+    # `ZM?` : la zone principale, que suit le flux des états ; sans elle,
+    # `zone` resterait inconnue (ou fausse après une coupure) jusqu'au
+    # prochain geste sur l'ampli.
+    requetes_initiales = ("PW?", "ZM?", "MV?", "MU?", "SI?")
 
     # Le réveil (`seance.py`). Valeurs provisoires, **à confirmer en R0**
     # (recette sur l'ampli, `docs/reveil.md`) :

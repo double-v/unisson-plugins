@@ -76,5 +76,6 @@ def enregistrer(ctx: Contexte) -> None:
     ctx.tache(lambda: seances.tourner(lien.tourner))
     # Le port est lu à l'activation : le changer demande de réactiver le plugin.
     if port := ctx.reglage("port_ecoute"):
-        seul = routes.fabriquer(lien, lambda: ctx.secret("jeton"))
+        # Le flux des états n'est servi qu'ici (voir `routes.py`).
+        seul = routes.fabriquer(lien, lambda: ctx.secret("jeton"), evenements=True)
         ctx.tache(lambda: ecoute.servir(seul, port, ctx.journal))

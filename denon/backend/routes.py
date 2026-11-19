@@ -6,7 +6,12 @@ clients de `denon-api` basculent sans changer une ligne. Les tests de
 non-régression rejouent les appels du client Denon de Hublot.
 
 En plus de `denon-api` : `GET /api/events`, le flux des états (Server-Sent
-Events), pour suivre l'ampli sans interroger `/api/state` en boucle.
+Events), pour suivre l'ampli sans interroger `/api/state` en boucle. Il
+n'est servi que sur l'écoute à part (`evenements=True`) : uvicorn attend la
+fin des connexions avant d'arrêter l'app, et unisson le lance sans délai de
+grâce. Un flux ouvert sur l'app du cœur, qui ne se ferme qu'à l'arrêt du
+plugin, donc après celui des connexions, bloquerait l'arrêt d'unisson.
+L'écoute à part a son propre délai (2 s) et s'arrête avec le plugin.
 """
 
 from __future__ import annotations
@@ -86,10 +91,12 @@ async def corps(request: Request) -> dict:
     return valeur if isinstance(valeur, dict) else {}
 
 
-def fabriquer(lien: Lien, jeton: Callable[[], str], *, battement_s: float = 20.0) -> APIRouter:
+def fabriquer(lien: Lien, jeton: Callable[[], str], *, evenements: bool = False,
+              battement_s: float = 20.0) -> APIRouter:
     router = APIRouter(route_class=_Route)
     pilote = lien.pilote
-    protege = [Depends(garde_du_jeton(jeton))]
+    garde = garde_du_jeton(jeton)
+    protege = [Depends(garde)]
 
     def complet(etat: dict) -> dict:
         return {**etat, "host": lien.config.hote or None, "port": lien.config.port}
@@ -109,13 +116,20 @@ def fabriquer(lien: Lien, jeton: Callable[[], str], *, battement_s: float = 20.0
     async def etat():
         return complet(lien.etat)
 
-    @router.get("/api/events", dependencies=protege)
-    async def evenements():
+    async def flux_des_etats(request: Request):
         """L'état complet à la connexion, puis à chaque changement (connexion
         et coupure du lien comprises), au format de `/api/state` ; un
         commentaire toutes les `battement_s` s sans changement, pour qu'un
         client repère une connexion morte. Le flux se termine quand le lien
-        s'arrête (plugin désactivé) : le client se reconnecte."""
+        s'arrête (plugin désactivé), ou quand le jeton change : le client se
+        reconnecte, avec le nouveau."""
+
+        def autorise() -> bool:
+            try:
+                garde(request)
+            except NonAutorise:
+                return False
+            return True
 
         async def flux():
             # S'abonner et lire l'état sans attente entre les deux : aucun
@@ -124,7 +138,10 @@ def fabriquer(lien: Lien, jeton: Callable[[], str], *, battement_s: float = 20.0
             try:
                 yield "retry: 2000\n" + _evenement(complet(lien.etat))
                 while True:
-                    if (nouveau := await abonnement.suivant(battement_s)) is not None:
+                    nouveau = await abonnement.suivant(battement_s)
+                    if not autorise():  # jeton changé depuis l'ouverture
+                        return
+                    if nouveau is not None:
                         yield _evenement(complet(nouveau))
                     elif abonnement.ferme:
                         return
@@ -135,6 +152,9 @@ def fabriquer(lien: Lien, jeton: Callable[[], str], *, battement_s: float = 20.0
 
         return StreamingResponse(flux(), media_type="text/event-stream",
                                  headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+    if evenements:
+        router.add_api_route("/api/events", flux_des_etats, methods=["GET"], dependencies=protege)
 
     @router.get("/api/queue", dependencies=protege)
     async def file():

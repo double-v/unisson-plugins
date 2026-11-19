@@ -28,7 +28,8 @@ BATTEMENT = 0.2
 async def flux(faux_ampli):
     lien = Lien(lambda: Config("127.0.0.1", faux_ampli.port, 0.01), PILOTES["avrx4000"], attente_min=0.05, attente_max=0.2)
     port = port_libre()
-    routeur = routes.fabriquer(lien, lambda: JETON, battement_s=BATTEMENT)
+    jeton = {"valeur": JETON}
+    routeur = routes.fabriquer(lien, lambda: jeton["valeur"], evenements=True, battement_s=BATTEMENT)
     taches = [
         asyncio.create_task(lien.tourner()),
         asyncio.create_task(ecoute.servir(routeur, port, logging.getLogger("t"), "127.0.0.1")),
@@ -42,6 +43,7 @@ async def flux(faux_ampli):
             except httpx.TransportError:
                 await asyncio.sleep(0.02)
         client.headers["Authorization"] = f"Bearer {JETON}"
+        client.jeton = jeton
         yield client, faux_ampli, lien, taches
     for t in taches:
         t.cancel()
@@ -168,6 +170,24 @@ async def test_l_arret_du_lien_ferme_le_flux(flux):
     assert not lien._abonnes
 
 
+async def test_un_jeton_change_ferme_le_flux(flux):
+    client, *_ = flux
+    async with client.stream("GET", "/api/events") as r:
+        lecteur = Lecteur(r)
+        await lecteur.etat()
+        client.jeton["valeur"] = "nouveau"  # réglé à chaud dans unisson
+        with pytest.raises(StopAsyncIteration):
+            while True:
+                await lecteur.bloc(BATTEMENT * 5)
+
+
+def test_le_flux_n_est_servi_que_sur_l_ecoute_a_part():
+    lien = Lien(lambda: Config("", 23, 0), PILOTES["avrx4000"])
+    chemins = lambda r: {route.path for route in r.routes}  # noqa: E731
+    assert "/api/events" not in chemins(routes.fabriquer(lien, lambda: ""))
+    assert "/api/events" in chemins(routes.fabriquer(lien, lambda: "", evenements=True))
+
+
 async def test_un_client_lent_recoit_le_dernier_etat():
     """Un abonné qui ne lit pas ne fait pas grossir de file : il trouve le
     dernier état à sa prochaine lecture."""
@@ -181,3 +201,60 @@ async def test_un_client_lent_recoit_le_dernier_etat():
     assert await abonnement.suivant(0.05) is None  # rien de neuf : délai écoulé
     abonnement.retirer()
     assert not lien._abonnes
+
+
+async def test_un_flux_ouvert_ne_bloque_pas_l_arret_d_unisson(faux_ampli):
+    """Constat de la relecture : uvicorn attend la fin des connexions avant
+    l'arrêt de l'app, et unisson le lance sans délai de grâce. Un flux servi
+    par l'app du cœur, fermé seulement par l'arrêt du plugin (dans cet arrêt
+    de l'app), l'aurait bloqué pour toujours. Servi par l'écoute à part, il
+    laisse unisson s'arrêter : ici, un serveur réglé comme celui d'unisson."""
+    import contextlib
+    import socket
+
+    import uvicorn
+    from fastapi import FastAPI
+
+    lien = Lien(lambda: Config("127.0.0.1", faux_ampli.port, 0.01), PILOTES["avrx4000"], attente_min=0.05, attente_max=0.2)
+    port_ecoute = port_libre()
+    taches = []
+
+    @contextlib.asynccontextmanager
+    async def cycle(app):
+        taches.append(asyncio.create_task(lien.tourner()))
+        seul = routes.fabriquer(lien, lambda: JETON, evenements=True)
+        taches.append(asyncio.create_task(ecoute.servir(seul, port_ecoute, logging.getLogger("t"), "127.0.0.1")))
+        yield
+        for t in taches:  # chargeur.arreter_tout()
+            t.cancel()
+        await asyncio.gather(*taches, return_exceptions=True)
+
+    app = FastAPI(lifespan=cycle)
+    app.include_router(routes.fabriquer(lien, lambda: JETON), prefix="/api/plugins/denon")
+    s = socket.socket()
+    s.bind(("127.0.0.1", 0))
+    s.listen()
+    port_coeur = s.getsockname()[1]
+    coeur = ecoute._Serveur(uvicorn.Config(app, log_config=None))  # sans timeout_graceful_shutdown
+    service = asyncio.create_task(coeur.serve(sockets=[s]))
+    try:
+        await attendre(lambda: coeur.started and lien.connecte)
+        auth = {"Authorization": f"Bearer {JETON}"}
+        async with httpx.AsyncClient(timeout=5, headers=auth) as client:
+            r = await client.get(f"http://127.0.0.1:{port_coeur}/api/plugins/denon/api/events")
+            assert r.status_code == 404, "pas de flux sur l'app du cœur"
+            async with client.stream("GET", f"http://127.0.0.1:{port_ecoute}/api/events") as r:
+                lecteur = Lecteur(r)
+                await lecteur.etat()
+                coeur.should_exit = True  # SIGTERM
+                await asyncio.wait_for(asyncio.shield(service), 5)
+                with pytest.raises(StopAsyncIteration):
+                    while True:
+                        await lecteur.bloc()
+        assert not lien._abonnes
+    finally:
+        coeur.force_exit = coeur.should_exit = True
+        await asyncio.gather(service, return_exceptions=True)
+        for t in taches:
+            t.cancel()
+        await asyncio.gather(*taches, return_exceptions=True)

@@ -45,10 +45,15 @@ le flux des états (`GET /api/events`) : suivre l'ampli sans interroger
   route sauf `/healthz` exige `Authorization: Bearer <jeton>`, sinon 401
   `{"error": "unauthorized"}`.
 - **Le flux des états** (0.6.0), en plus de `denon-api` :
-  `GET /api/events`, au format Server-Sent Events, sous le même jeton et
-  aussi sur l'écoute à part. Pour un client qui suit l'ampli (une prise qui
-  allume le caisson de basses avec lui) sans interroger `/api/state` en
-  boucle.
+  `GET /api/events`, au format Server-Sent Events, sous le même jeton.
+  Pour un client qui suit l'ampli (une prise qui allume le caisson de
+  basses avec lui) sans interroger `/api/state` en boucle. **Servi
+  seulement sur l'écoute à part** (`http://<nas>:8100/api/events`), pas
+  sous `/api/plugins/denon/` : uvicorn attend la fin des connexions avant
+  d'arrêter l'app, et unisson le lance sans délai de grâce. Un flux ouvert
+  sur l'app du cœur ne se fermerait qu'à l'arrêt du plugin, qui vient
+  après : unisson ne s'arrêterait plus. L'écoute à part a son propre délai
+  (2 s) et s'arrête avec le plugin. Sans `port_ecoute`, pas de flux.
   - À la connexion, un événement `state` avec l'état complet, au format
     exact de `/api/state` (`data:` sur une ligne, JSON compact).
   - Puis un événement `state` à chaque changement de l'état : une trame qui
@@ -60,7 +65,11 @@ le flux des états (`GET /api/events`) : suivre l'ampli sans interroger
   - Sans changement, un commentaire `: battement` toutes les 20 s : un
     client qui n'a rien reçu depuis 60 s peut tenir la connexion pour morte.
   - Le flux se termine quand le plugin est désactivé (dernier état :
-    `connected` à faux). `retry: 2000` : un `EventSource` se reconnecte seul.
+    `connected` à faux), ou quand le jeton change (vérifié à chaque envoi).
+    `retry: 2000` : un `EventSource` se reconnecte seul.
+  - Pour suivre la zone principale, `zone` : le lien la demande (`ZM?`) à
+    chaque connexion, avec `PW?`. `power` reste vrai tant qu'une autre zone
+    joue.
 - **L'écoute à part** (`port_ecoute`, désactivée à 0) : la même API servie
   seule sur un port, à l'adresse exacte de l'ancien conteneur
   (`http://<nas>:8100/api/state`). Hublot bascule ainsi sans changer une
